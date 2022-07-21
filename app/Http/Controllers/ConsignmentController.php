@@ -1286,6 +1286,9 @@ class ConsignmentController extends Controller
                     }
                     
                     $price = isset($prices[$item_code]) ? preg_replace("/[^0-9 .]/", "", $prices[$item_code][0]) * 1 : 0;
+                    if(!$price){
+                        return redirect()->back()->with('error', 'Item price cannot be empty');
+                    }
 
                     // Bin
                     if(isset($bin_items[$item_code])){
@@ -1329,7 +1332,11 @@ class ConsignmentController extends Controller
                         // update each item, allows checking if item for this branch is approved/cancelled
                         DB::table('tabConsignment Beginning Inventory Item')->where('parent', $id)->where('item_code', $item_code)->update($update_values);
                     }else{
-                        $item_qty = isset($qty[$item_code]) ? $qty[$item_code][0] : 0;
+                        $item_qty = isset($qty[$item_code]) ? preg_replace("/[^0-9 .]/", "", $qty[$item_code][0]) : 0;
+
+                        if(!$item_qty){
+                            return redirect()->back()->with('error', 'Opening qty cannot be empty');
+                        }
 
                         $insert = [
                             'name' => uniqid(),
@@ -1343,7 +1350,7 @@ class ConsignmentController extends Controller
                             'stock_uom' => isset($item_details[$item_code]) ? $item_details[$item_code][0]->stock_uom : null,
                             'opening_stock' => $item_qty,
                             'stocks_displayed' => 0,
-                            'status' => 'For Approval',
+                            'status' => 'Approved', //'For Approval',
                             'price' => $price,
                             'amount' => $price * $item_qty,
                             'modified' => $now,
@@ -1975,9 +1982,9 @@ class ConsignmentController extends Controller
                     $q->orWhere('item.item_code', 'LIKE', "%".$request->q."%");
                 });
             })
-            ->select('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification')
-            ->groupBy('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification')
-            ->get();
+            ->select('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification', 'item.stock_uom')
+            ->groupBy('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification', 'item.stock_uom')
+            ->limit(8)->get();
 
         $item_codes = collect($items)->map(function ($q){
             return $q->item_code;
@@ -2006,7 +2013,8 @@ class ConsignmentController extends Controller
                 'classification' => $item->item_classification,
                 'image' => asset('storage'.$image),
                 'image_webp' => asset('storage'.$image_webp),
-                'alt' => str_slug(explode('.', $image)[0], '-')
+                'alt' => str_slug(explode('.', $image)[0], '-'),
+                'uom' => $item->stock_uom
             ];
         }
 

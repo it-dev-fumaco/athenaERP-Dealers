@@ -8,6 +8,7 @@ $baseDir = dirname($vendorDir);
 return array(
     'App\\Console\\Kernel' => $baseDir . '/app/Console/Kernel.php',
     'App\\Exceptions\\Handler' => $baseDir . '/app/Exceptions/Handler.php',
+    'App\\Http\\Controllers\\ConsignmentController' => $baseDir . '/app/Http/Controllers/ConsignmentController.php',
     'App\\Http\\Controllers\\Controller' => $baseDir . '/app/Http/Controllers/Controller.php',
     'App\\Http\\Controllers\\ItemAttributeController' => $baseDir . '/app/Http/Controllers/ItemAttributeController.php',
     'App\\Http\\Controllers\\LoginController' => $baseDir . '/app/Http/Controllers/LoginController.php',
@@ -654,7 +655,6 @@ return array(
     'Faker\\Provider\\nl_BE\\Payment' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_BE/Payment.php',
     'Faker\\Provider\\nl_BE\\Person' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_BE/Person.php',
     'Faker\\Provider\\nl_BE\\PhoneNumber' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_BE/PhoneNumber.php',
-    'Faker\\Provider\\nl_BE\\Text' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_BE/Text.php',
     'Faker\\Provider\\nl_NL\\Address' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_NL/Address.php',
     'Faker\\Provider\\nl_NL\\Color' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_NL/Color.php',
     'Faker\\Provider\\nl_NL\\Company' => $vendorDir . '/fzaninotto/faker/src/Faker/Provider/nl_NL/Company.php',
