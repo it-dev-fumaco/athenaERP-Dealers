@@ -5,7 +5,7 @@
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'reference' => 'f2bc80c872dce4f8790a4063d440591260e11308',
+        'reference' => 'a82e8ee9605949289f452de54b903599084d4f86',
         'name' => 'laravel/laravel',
         'dev' => true,
     ),
@@ -382,7 +382,7 @@
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
-            'reference' => 'f2bc80c872dce4f8790a4063d440591260e11308',
+            'reference' => 'a82e8ee9605949289f452de54b903599084d4f86',
             'dev_requirement' => false,
         ),
         'laravel/nexmo-notification-channel' => array(
@@ -733,8 +733,8 @@
         'psr/log-implementation' => array(
             'dev_requirement' => false,
             'provided' => array(
-                0 => '1.0|2.0',
-                1 => '1.0.0',
+                0 => '1.0.0',
+                1 => '1.0|2.0',
             ),
         ),
         'psr/simple-cache' => array(
@@ -1080,6 +1080,15 @@
             'install_path' => __DIR__ . '/../symfony/process',
             'aliases' => array(),
             'reference' => '9eedd60225506d56e42210a70c21bb80ca8456ce',
+            'dev_requirement' => false,
+        ),
+        'symfony/psr-http-message-bridge' => array(
+            'pretty_version' => 'v2.1.2',
+            'version' => '2.1.2.0',
+            'type' => 'symfony-bridge',
+            'install_path' => __DIR__ . '/../symfony/psr-http-message-bridge',
+            'aliases' => array(),
+            'reference' => '22b37c8a3f6b5d94e9cdbd88e1270d96e2f97b34',
             'dev_requirement' => false,
         ),
         'symfony/routing' => array(
