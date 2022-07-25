@@ -35,9 +35,8 @@
                                 </div>
                             @endif
                         <div class="container-fluid">
-                            <span class="float-right p-2" style="font-size: 10pt;"><b>Total: </b>{{ $stock_transfers->total() }}</span>
+                            <span class="float-right p-2" style="font-size: 10pt;"><b>Total: </b>{{ number_format($total_records) }}</span>
                         </div>
-
                             <table class="table" style="font-size: 10pt;">
                                 <thead class="border-top">
                                     <th class="text-center p-1 d-none d-lg-table-cell">Date</th>
@@ -70,7 +69,7 @@
                                     }
                                 @endphp
                                 <tr>
-                                    <td class="text-center p-1 d-none d-lg-table-cell">{{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i a') }}</td>
+                                    <td class="text-center p-1 d-none d-lg-table-cell">{{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i A') }}</td>
                                     <td class="text-center p-1 d-none d-lg-table-cell"><span class="font-weight-bold">{{ $ste['transfer_type'] }}</span></td>
                                     @if ($purpose == 'Material Transfer') {{-- Stock Transfers and Returns --}}
                                     <td class="p-1">
@@ -115,7 +114,7 @@
                                                         @else {{-- Sales Returns --}}
                                                         <span class="d-block text-left">{{ $ste['to_warehouse'] }}</span>
                                                         @endif
-                                                        <small class="d-block text-left mb-2">{{ $ste['owner'] }} - {{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i a') }}</small>
+                                                        <small class="d-block text-left mb-2">{{ $ste['owner'] }} - {{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i A') }}</small>
                                                        
                                                         <table class="table" style="font-size: 9pt;">
                                                             <thead>
@@ -240,7 +239,7 @@
                                         @else {{-- Sales Returns --}}
                                             <b>{{ $ste['to_warehouse'] }}</b> <br>
                                         @endif
-                                        <small>{{ $ste['owner'] }} - {{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i a') }}</small>
+                                        <small>{{ $ste['owner'] }} - {{ Carbon\Carbon::parse($ste['date'])->format('M d, Y - h:i A') }}</small>
                                     </td>
                                 </tr>
                                 @empty
@@ -251,7 +250,46 @@
                                 </tbody>
                             </table>
                             <div class="mt-3 ml-3 clearfix pagination d-block">
-                                {{ $stock_transfers->links() }}
+                                @if(isset($total_records) && $total_records > 0)
+                                @php
+                                    $ends_count = 2;  //how many items at the ends (before and after [...])
+                                    $middle_count = 2;  //how many items before and after current page
+                                    $dots = false;
+                                    $prev = $current_page - 1;
+                                @endphp
+                                <ul class="pagination">
+                                    <li class="page-item {{ (1 < $current_page) ? '' : 'disabled' }}">
+                                    <a href="{{ \Request::url() .'?page='.$prev }}" class="page-link">Previous</a>
+                                    </li>
+                                    @for ($i = 1; $i <= $numOfPages; $i++) 
+                                    @if ($i == $current_page)
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ $i }}</span>
+                                    </li>
+                                    @php
+                                        $dots = true;
+                                    @endphp
+                                    @else
+                                        @if ($i <= $ends_count || ($current_page && $i >= $current_page - $middle_count && $i <= $current_page + $middle_count) || $i > $numOfPages - $ends_count) 
+                                        <li class="page-item"><a class="page-link" href="{{ \Request::url() .'?page='.$i }}">{{ $i }}</a></li>
+                                        @php
+                                            $dots = true;
+                                        @endphp
+                                        @elseif ($dots)
+                                        <li class="page-item disabled">
+                                            <a class="page-link" href="#">&hellip;</a>
+                                        </li>
+                                        @php
+                                        $dots = false;
+                                        @endphp
+                                        @endif
+                                    @endif
+                                    @endfor
+                                    <li class="page-item {{ ($current_page < $numOfPages || -1 == $numOfPages) ? '' : 'disabled' }}">
+                                        <a class="page-link" href="{{ \Request::url() .'?page='.$next_page }}">Next</a>
+                                    </li>
+                                </ul>
+                                @endif
                             </div>
                         </div>
                     </div>

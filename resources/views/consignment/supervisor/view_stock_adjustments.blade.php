@@ -289,6 +289,8 @@
                                                                                     @endphp
                                                                                     <tr id="row-{{ $target }}">
                                                                                         <td class="text-center p-1 align-middle">
+                                                                                            <input type="hidden" name="item_descriptions[{{ $item['item_code'] }}]" value="{!! strip_tags($item['item_description']) !!}" />
+                                                                                            <input type="hidden" name="stock_uoms[{{ $item['item_code'] }}]" value="{{ ($item['uom']) }}" />
                                                                                             <div class="d-flex flex-row justify-content-start align-items-center" id="{{ $target }}-container">
                                                                                                 <div class="p-2 text-left">
                                                                                                     <a href="{{ asset('storage/') }}{{ $img }}" data-toggle="mobile-lightbox" data-gallery="{{ $item['item_code'] }}" data-title="{{ $item['item_code'] }}">
@@ -794,6 +796,8 @@
 
                 var row = '<tr id="row-' + target + '" class="' + item_code + '">' + 
                     '<td class="text-center p-1 align-middle">' +
+                        '<input type="hidden" name="item_descriptions[' + item_code + ']" value="'+ description +'" />' +
+                        '<input type="hidden" name="stock_uoms[' + item_code + ']" value="'+ uom +'" />' +
                         '<div class="d-flex flex-row justify-content-start align-items-center" id="' + target + '-container">' +
                             '<div class="p-2 text-left">' +
                                 '<a href="' + img + '" data-toggle="mobile-lightbox" data-gallery="' + item_code + '" data-title="' + item_code + '">' +
@@ -836,7 +840,7 @@
                                                         '<picture>' +
                                                             '<source id="mobile-' + item_code + '-webp-image-src" srcset="' + webp + '" type="image/webp" class="d-block w-100" style="width: 100% !important;">' +
                                                             '<source id="mobile-' + item_code + '-orig-image-src" srcset="' + img + '" type="image/jpeg" class="d-block w-100" style="width: 100% !important;">' +
-                                                            '<img class="d-block w-100" id="mobile-' + item_code + '-image" src="' + img + '" alt="{{ Illuminate\Support\Str::slug(explode('.', $img)[0], '-') }}">' +
+                                                            '<img class="d-block w-100" id="mobile-' + item_code + '-image" src="' + img + '" alt="' + item_code + '">' +
                                                         '</picture>' +
                                                     '</div>' +
                                                     '<span class="d-none" id="mobile-' + item_code + '-image-data">0</span>' +
