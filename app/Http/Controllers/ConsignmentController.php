@@ -543,8 +543,7 @@ class ConsignmentController extends Controller
         $consigned_stocks = DB::table('tabBin')->whereIn('item_code', $item_codes)->where('warehouse', $branch)->pluck('consigned_qty', 'item_code')->toArray();
 
         $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
-
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, null);
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         $existing_record = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
@@ -1322,6 +1321,7 @@ class ConsignmentController extends Controller
                 $bin = DB::table('tabBin')->where('warehouse', $branch)->whereIn('item_code', $item_codes)->get();
                 $bin_items = collect($bin)->groupBy('item_code');
 
+                $new_items = [];
                 foreach($item_codes as $i => $item_code){
                     if(isset($items[$item_code]) && $items[$item_code][0]->status != 'For Approval'){ // Skip the approved/cancelled items
                         continue;
