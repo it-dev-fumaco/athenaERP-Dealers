@@ -37,11 +37,11 @@ class ConsignmentController extends Controller
             if ($res->getStatusCode() == 200) {
                 $res = json_decode((string) $res->getBody());
                 $res = collect($res)->toArray();
-                
-                $item_images = $res['data'];
+
+                return $item_images = $res['data'];
             }
         } catch (ConnectException $e) {
-            $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+            return $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
                 ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         }
     }
@@ -168,8 +168,7 @@ class ConsignmentController extends Controller
             ->whereBetween('csr.transaction_date', [$start, $end])->selectRaw('SUM(csri.qty) as sold_qty, csri.item_code')
             ->groupBy('csri.item_code')->pluck('sold_qty', 'csri.item_code')->toArray();
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         return view('consignment.inventory_audit_form', compact('branch', 'transaction_date', 'items', 'item_images', 'item_total_sold', 'duration', 'inventory_audit_from', 'inventory_audit_to', 'consigned_stocks'));
@@ -542,8 +541,7 @@ class ConsignmentController extends Controller
 
         $consigned_stocks = DB::table('tabBin')->whereIn('item_code', $item_codes)->where('warehouse', $branch)->pluck('consigned_qty', 'item_code')->toArray();
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, null);
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         $existing_record = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
@@ -1078,8 +1076,7 @@ class ConsignmentController extends Controller
 
         $item_codes = collect($inv_summary)->pluck('item_code');
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.promodiser_warehouse_items', compact('inv_summary', 'item_image', 'branch', 'assigned_consignment_stores'));
@@ -1180,8 +1177,7 @@ class ConsignmentController extends Controller
             return $q->branch_warehouse;
         })->unique();
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);        
+        $item_images = $this->getItemImages($item_codes, [], []);        
         $item_image = collect($item_images)->groupBy('parent');
 
         $uoms = DB::table('tabItem')->whereIn('item_code', $item_codes)->select('item_code', 'stock_uom')->get();
@@ -1583,8 +1579,7 @@ class ConsignmentController extends Controller
             ];
         }
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent');
 
         $now = Carbon::now();
@@ -2007,8 +2002,7 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $athenaerp_api = [];
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, null);
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.beginning_inv_items_list', compact('inventory', 'item_image', 'beginning_inventory'));
@@ -2876,7 +2870,7 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->get();
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent');
 
         $default_images = DB::table('tabItem')->whereIn('item_code', $item_codes)->whereNotNull('item_image_path')->select('item_code', 'item_image_path as image_path')->get(); // in case there are no saved images in Item Images
@@ -3395,7 +3389,6 @@ class ConsignmentController extends Controller
             return $q->s_warehouse;
         })->unique();
 
-        $stock_transfer_items = DB::table('tabStock Entry Detail')->whereIn('parent', $reference_ste)->get();
         $stock_transfer_item = collect($stock_transfer_items)->groupBy('parent');
         
         $item_codes = collect($stock_transfer_items)->map(function ($q){
@@ -3552,20 +3545,16 @@ class ConsignmentController extends Controller
                         }
                     }
         
-                    $check = Carbon::parse($start)->between($period_from, $period_to);
-    
                     $duration = Carbon::parse($start)->addDay()->format('F d, Y') . ' - ' . Carbon::now()->format('F d, Y');
                     if ($last_audit_date->endOfDay()->lt($end) && $beginning_inventory_transaction_date) {
-                        if (!$check) {
-                            $pending_arr[] = [
-                                'store' => $store,
-                                'beginning_inventory_date' => $beginning_inventory_transaction_date,
-                                'last_inventory_audit_date' => $last_inventory_audit_date,
-                                'duration' => $duration,
-                                'is_late' => $is_late,
-                                'today' => Carbon::now()->format('Y-m-d'),
-                            ];
-                        }
+                        $pending_arr[] = [
+                            'store' => $store,
+                            'beginning_inventory_date' => $beginning_inventory_transaction_date,
+                            'last_inventory_audit_date' => $last_inventory_audit_date,
+                            'duration' => $duration,
+                            'is_late' => $is_late,
+                            'today' => Carbon::now()->format('Y-m-d'),
+                        ];
                     }
                 }
 
@@ -3703,7 +3692,7 @@ class ConsignmentController extends Controller
 
         $inv_audit = collect($inv_audit)->groupBy('item_code')->toArray();
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent')->toArray();
 
         $result = [];
@@ -4019,7 +4008,7 @@ class ConsignmentController extends Controller
 
         $item_codes = collect($list)->pluck('item_code');
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        $item_images = $this->getItemImages($item_codes, [], []);
         $item_image = collect($item_images)->groupBy('parent')->toArray();
 
         $result = [];
