@@ -352,6 +352,7 @@ class ConsignmentController extends Controller
                             'idx' => $no_of_items_updated,
                             'item_code' => $item_code,
                             'description' => $row['description'],
+                            'stock_uom' => $row['stock_uom'],
                             'qty' => $sold_qty,
                             'price' => (float)$price,
                             'amount' => $amount,
@@ -401,6 +402,7 @@ class ConsignmentController extends Controller
                         'idx' => $no_of_items_updated,
                         'item_code' => $item_code,
                         'description' => $row['description'],
+                        'stock_uom' => $row['stock_uom'],
                         'qty' => (float)$row['qty'],
                         'price' => (float)$price,
                         'amount' => $iar_amount,
@@ -1077,7 +1079,8 @@ class ConsignmentController extends Controller
 
         $item_codes = collect($inv_summary)->pluck('item_code');
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.promodiser_warehouse_items', compact('inv_summary', 'item_image', 'branch', 'assigned_consignment_stores'));
@@ -1178,7 +1181,8 @@ class ConsignmentController extends Controller
             return $q->branch_warehouse;
         })->unique();
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->orderBy('idx', 'asc')->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);        
         $item_image = collect($item_images)->groupBy('parent');
 
         $uoms = DB::table('tabItem')->whereIn('item_code', $item_codes)->select('item_code', 'stock_uom')->get();
@@ -1312,8 +1316,8 @@ class ConsignmentController extends Controller
                 $items = DB::table('tabConsignment Beginning Inventory Item')->where('parent', $id)->get();
                 $items = collect($items)->groupBy('item_code');
 
-                $item_details = DB::table('tabItem')->whereIn('name', $item_codes)->select('name', 'description', 'stock_uom')->get();
-                $item_details = collect($item_details)->groupBy('name');
+                $item_descriptions = collect(array_filter($request->item_descriptions))->unique();
+                $stock_uoms = collect(array_filter($request->stock_uoms))->unique();
 
                 $bin = DB::table('tabBin')->where('warehouse', $branch)->whereIn('item_code', $item_codes)->get();
                 $bin_items = collect($bin)->groupBy('item_code');
@@ -1326,6 +1330,19 @@ class ConsignmentController extends Controller
                     $price = isset($prices[$item_code]) ? preg_replace("/[^0-9 .]/", "", $prices[$item_code][0]) * 1 : 0;
                     if(!$price){
                         return redirect()->back()->with('error', 'Item price cannot be empty');
+                    }
+
+                    $item_description = isset($item_descriptions[$item_code]) ? $item_descriptions[$item_code] : null;
+                    $stock_uom = isset($stock_uoms[$item_code]) ? $stock_uoms[$item_code] : null;
+
+                    $existing_item = DB::table('tabItem')->where('item_code', $item_code)->first();
+                    if (!$existing_item) {
+                        $new_items[] = [
+                            'name' => $item_code,
+                            'item_code' => $item_code,
+                            'stock_uom' => $stock_uom,
+                            'description' => $item_description
+                        ];
                     }
 
                     // Bin
@@ -1353,7 +1370,7 @@ class ConsignmentController extends Controller
                             'idx' => 0, 
                             'warehouse' => $branch,
                             'item_code' => $item_code,
-                            'stock_uom' => isset($item_details[$item_code]) ? $item_details[$item_code][0]->stock_uom : null,
+                            'stock_uom' => $stock_uom,
                             'valuation_rate' => $price,
                             'consigned_qty' => isset($qty[$item_code]) ? $qty[$item_code][0] : 0,
                             'consignment_price' => $price
@@ -1364,6 +1381,7 @@ class ConsignmentController extends Controller
                     if(isset($items[$item_code])){
                         if(isset($prices[$item_code])){ // in case there is an update in price
                             $update_values['price'] = $price;
+                            $update_values['amount'] = $price * (isset($qty[$item_code]) ? $qty[$item_code][0] : 0);
                             $update_values['idx'] = $i + 1;
                         }
         
@@ -1384,8 +1402,8 @@ class ConsignmentController extends Controller
                             'parent' => $id,
                             'idx' => $i + 1,
                             'item_code' => $item_code,
-                            'item_description' => isset($item_details[$item_code]) ? $item_details[$item_code][0]->description : null,
-                            'stock_uom' => isset($item_details[$item_code]) ? $item_details[$item_code][0]->stock_uom : null,
+                            'item_description' => $item_description,
+                            'stock_uom' => $stock_uom,
                             'opening_stock' => $item_qty,
                             'stocks_displayed' => 0,
                             'status' => 'Approved', //'For Approval',
@@ -1407,6 +1425,7 @@ class ConsignmentController extends Controller
 
             if(isset($update_values['price'])){ // remove price/idx in updates array, parent table of beginning inventory does not have price/idx
                 unset($update_values['price']);
+                unset($update_values['amount']);
             }
 
             if(isset($update_values['idx'])){
@@ -1418,9 +1437,14 @@ class ConsignmentController extends Controller
                 $update_values['date_approved'] = $now;
             }
 
+            if (count($new_items) > 0) {
+                DB::table('tabItem')->insert($new_items);
+            }
+
             DB::table('tabConsignment Beginning Inventory')->where('name', $id)->update($update_values);
 
             DB::commit();
+
             if ($request->ajax()) {
                 return response()->json(['status' => 1, 'message' => 'Beginning Inventory for '.$branch.' was '.$request->status.'.']);
             }
@@ -1559,7 +1583,8 @@ class ConsignmentController extends Controller
             ];
         }
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
         $item_image = collect($item_images)->groupBy('parent');
 
         $now = Carbon::now();
@@ -1982,7 +2007,8 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, null);
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.beginning_inv_items_list', compact('inventory', 'item_image', 'beginning_inventory'));
