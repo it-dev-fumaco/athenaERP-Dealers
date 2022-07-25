@@ -6,12 +6,46 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use GuzzleHttp\Exception\ConnectException;
 use Auth;
 use DB;
 use Storage;
 
 class ConsignmentController extends Controller
 {
+    private function getItemImages($item_codes, $athenaerp_api, $headers) {
+        try {
+            if (!$athenaerp_api) {
+                $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            }
+
+            if (!$headers) {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
+            }
+
+            $client = new \GuzzleHttp\Client();
+            $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_item_images', [
+                'query' => ['item_codes' => $item_codes->toArray()],
+                'headers' => $headers,
+            ]);
+
+            if ($res->getStatusCode() == 200) {
+                $res = json_decode((string) $res->getBody());
+                $res = collect($res)->toArray();
+                
+                $item_images = $res['data'];
+            }
+        } catch (ConnectException $e) {
+            $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        }
+    }
+
     // /view_calendar_menu/{branch}
     public function viewCalendarMenu($branch){
         $sales_report_deadline = DB::table('tabConsignment Sales Report Deadline')->first();
@@ -103,13 +137,12 @@ class ConsignmentController extends Controller
         if ($existing_items) {
             $items = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
                 ->where('status', '!=', 'Cancelled')->where('csr.branch_warehouse', $branch)->where('csr.transaction_date', $transaction_date)
-                ->select('csri.item_code', 'csri.description', 'csri.price')
-                ->get()->toArray();
+                ->select('csri.item_code', 'csri.description', 'csri.price', 'csri.stock_uom')->get()->toArray();
         } else {
             $items = DB::table('tabBin as b')
                 ->join('tabItem as i', 'i.name', 'b.item_code')
                 ->where('b.warehouse', $branch)->where('b.consigned_qty', '>', 0)
-                ->select('b.item_code', 'i.description', 'b.consignment_price as price')
+                ->select('b.item_code', 'i.description', 'b.consignment_price as price', 'i.stock_uom')
                 ->orderBy('i.description', 'asc')->get();
         }
 
@@ -117,13 +150,13 @@ class ConsignmentController extends Controller
             $item_codes = collect($items)->pluck('item_code');
             $bin_items_not_in_product_sold = DB::table('tabBin as b')
                 ->join('tabItem as i', 'i.name', 'b.item_code')->where('b.warehouse', $branch)->where('b.consigned_qty', '>', 0)
-                ->whereNotIn('b.item_code', $item_codes)->select('b.item_code', 'i.description', 'b.consignment_price as price')
+                ->whereNotIn('b.item_code', $item_codes)->select('b.item_code', 'i.description', 'b.consignment_price as price', 'i.stock_uom')
                 ->orderBy('i.description', 'asc')->get();
 
-            $items = $bin_items_not_in_product_sold->merge($items);
+            $items = collect($bin_items_not_in_product_sold)->merge($items);
         }
 
-        $items = $items->sortBy('description');
+        $items = collect($items)->sortBy('description');
             
         $item_codes = collect($items)->pluck('item_code');
         
@@ -135,7 +168,8 @@ class ConsignmentController extends Controller
             ->whereBetween('csr.transaction_date', [$start, $end])->selectRaw('SUM(csri.qty) as sold_qty, csri.item_code')
             ->groupBy('csri.item_code')->pluck('sold_qty', 'csri.item_code')->toArray();
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         return view('consignment.inventory_audit_form', compact('branch', 'transaction_date', 'items', 'item_images', 'item_total_sold', 'duration', 'inventory_audit_from', 'inventory_audit_to', 'consigned_stocks'));
@@ -480,13 +514,13 @@ class ConsignmentController extends Controller
         if ($existing_items) {
             $items = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
                 ->where('status', '!=', 'Cancelled')->where('csr.branch_warehouse', $branch)->where('csr.transaction_date', $transaction_date)
-                ->select('csri.item_code', 'csri.description', 'csri.price')
+                ->select('csri.item_code', 'csri.description', 'csri.price', 'csri.stock_uom')
                 ->get()->toArray();
         } else {
             $items = DB::table('tabBin as b')
                 ->join('tabItem as i', 'i.name', 'b.item_code')
                 ->where('b.warehouse', $branch)->where('b.consigned_qty', '>', 0)
-                ->select('b.item_code', 'i.description', 'b.consignment_price as price')
+                ->select('b.item_code', 'i.description', 'b.consignment_price as price', 'i.stock_uom')
                 ->orderBy('i.description', 'asc')->get();
         }
 
@@ -494,19 +528,21 @@ class ConsignmentController extends Controller
             $item_codes = collect($items)->pluck('item_code');
             $bin_items_not_in_product_sold = DB::table('tabBin as b')
                 ->join('tabItem as i', 'i.name', 'b.item_code')->where('b.warehouse', $branch)->where('b.consigned_qty', '>', 0)
-                ->whereNotIn('b.item_code', $item_codes)->select('b.item_code', 'i.description', 'b.consignment_price as price')
+                ->whereNotIn('b.item_code', $item_codes)->select('b.item_code', 'i.description', 'b.consignment_price as price', 'i.stock_uom')
                 ->orderBy('i.description', 'asc')->get();
 
-            $items = $bin_items_not_in_product_sold->merge($items);
+            $items = collect($bin_items_not_in_product_sold)->merge($items);
         }
 
-        $items = $items->sortBy('description');
+        $items = collect($items)->sortBy('description');
 
         $item_codes = collect($items)->pluck('item_code');
 
         $consigned_stocks = DB::table('tabBin')->whereIn('item_code', $item_codes)->where('warehouse', $branch)->pluck('consigned_qty', 'item_code')->toArray();
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+        $athenaerp_api = [];
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         $existing_record = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
@@ -654,6 +690,7 @@ class ConsignmentController extends Controller
                             'idx' => $no_of_items_updated,
                             'item_code' => $item_code,
                             'description' => $row['description'],
+                            'stock_uom' => $row['stock_uom'],
                             'qty' => $row['qty'],
                             'price' => (float)$price,
                             'amount' => $amount,
@@ -749,6 +786,7 @@ class ConsignmentController extends Controller
                                 'idx' => $no_of_items_updated,
                                 'item_code' => $item_code,
                                 'description' => $row['description'],
+                                'stock_uom' => $row['stock_uom'],
                                 'qty' => $row['qty'],
                                 'price' => (float)$price,
                                 'amount' => $amount,

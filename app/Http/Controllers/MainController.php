@@ -10,6 +10,7 @@ use App\StockReservation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use GuzzleHttp\Exception\ConnectException;
 use Auth;
 use DB;
 use Webp;

@@ -64,6 +64,7 @@
                                                 <div class="d-flex flex-row justify-content-center align-items-center">
                                                     <div class="p-1 col-2 text-center">
                                                         <input type="hidden" name="item[{{ $row->item_code }}][description]" value="{!! strip_tags($row->description) !!}">
+                                                        <input type="hidden" name="item[{{ $row->item_code }}][stock_uom]" value="{!! strip_tags($row->stock_uom) !!}">
                                                         <a href="{{ asset('storage/') }}{{ $img }}" data-toggle="mobile-lightbox" data-gallery="{{ $row->item_code }}" data-title="{{ $row->item_code }}">
                                                         <picture>
                                                             <source srcset="{{ asset('storage'.$img_webp) }}" type="image/webp" class="img-thumbna1il" alt="User Image" width="40" height="40">
