@@ -216,22 +216,48 @@ class MainController extends Controller
 
                 $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
-                $delivery_report_query = DB::table('tabStock Entry as ste')
-                    ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-                    ->when($beginning_inventory_start_date, function ($q) use ($beginning_inventory_start_date){ // do not include ste's of received items
-                        return $q->whereDate('ste.delivery_date', '>=', $beginning_inventory_start_date);
-                    })
-                    ->whereIn('ste.transfer_as', ['Consignment', 'Store Transfer'])
-                    ->where('ste.purpose', 'Material Transfer')
-                    ->where('ste.docstatus', '<', 2)
-                    ->whereIn('ste.item_status', ['For Checking', 'Issued'])
-                    ->whereIn('sted.t_warehouse', $assigned_consignment_store)
-                    ->where(function($q) {
-                        $q->whereNull('sted.consignment_status')
-                        ->orWhere('sted.consignment_status', '!=', 'Received');
-                    })
-                    ->select('ste.name', 'ste.delivery_date', 'ste.item_status', 'ste.from_warehouse', 'sted.t_warehouse', 'sted.s_warehouse', 'ste.creation', 'ste.posting_time', 'sted.item_code', 'sted.description', 'sted.transfer_qty', 'sted.stock_uom', 'sted.basic_rate', 'sted.consignment_status', 'ste.transfer_as', 'ste.docstatus')
-                    ->orderBy('ste.creation', 'desc')->get();
+                // get total stock transfer
+                $total_stock_transfer = 0;
+                $delivery_report_query = [];
+                $api_connected = true;
+                $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+                if ($athenaerp_api) {
+                    try {
+                        $headers = [
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                            'Accept-Language' => 'en',
+                            'Accept' => 'application/json',
+                        ];
+        
+                        $client = new \GuzzleHttp\Client();
+                        $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_total_stock_transfer', [
+                            'query' => ['assigned_consignment_store' => $assigned_consignment_store->toArray()],
+                            'headers' => $headers,
+                        ]);
+
+                        if ($res->getStatusCode() == 200) {
+                            $res = json_decode((string) $res->getBody());
+                            $res = collect($res)->toArray();
+                            
+                            $total_stock_transfer = $res['data'];
+                        }
+                        
+                        $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_pending_to_receive_items', [
+                            'query' => ['assigned_consignment_store' => $assigned_consignment_store->toArray(), 'beginning_inventory_start_date' => $beginning_inventory_start_date],
+                            'headers' => $headers,
+                        ]);
+
+                        if ($res->getStatusCode() == 200) {
+                            $res = json_decode((string) $res->getBody());
+                            $res = collect($res)->toArray();
+                            
+                            $delivery_report_query = $res['data'];
+                        }
+                    } catch (ConnectException $e) {
+                        $api_connected = false;
+                    }
+                }
 
                 $delivery_report = collect($delivery_report_query)->groupBy('name');
 
@@ -405,8 +431,31 @@ class MainController extends Controller
         }
 
         // get total stock transfer
-        $total_stock_transfers = DB::table('tabStock Entry')->whereIn('transfer_as', ['Consignment', 'For Return'])
-            ->where('purpose', 'Material Transfer')->where('naming_series', 'STEC-')->count();
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
+
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_total_stock_transfer', [
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $total_stock_transfers = $res['data'];
+                }
+            } catch (ConnectException $e) {
+                $total_stock_transfers = 0;
+            }
+        }
 
         // get total stock adjustments
         $total_stock_adjustments = DB::table('tabConsignment Beginning Inventory')->count();

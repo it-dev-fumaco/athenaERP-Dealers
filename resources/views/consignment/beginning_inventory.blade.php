@@ -81,7 +81,7 @@
             var selected_branch = '{{ $branch ? $branch : "none" }}';
             selected_branch = selected_branch != 'none' ? selected_branch : $('#selected-branch').val();
 
-            if(selected_branch != 'none' && $('#selected-branch').val() != null){
+            if(selected_branch != 'none' || $('#selected-branch').val() != null){
                 get_inv_record(selected_branch);
             }
             

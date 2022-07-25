@@ -1968,29 +1968,43 @@ class ConsignmentController extends Controller
     }
 
     // /get_items/{branch}
-    public function getItems(Request $request, $branch){
-        $search_str = explode(' ', $request->q);
+    public function getItems(Request $request){
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-        $items = DB::table('tabBin as bin')
-            ->join('tabItem as item', 'item.item_code', 'bin.item_code')
-            ->when($request->q, function ($query) use ($request, $search_str){
-                return $query->where(function($q) use ($search_str, $request) {
-                    foreach ($search_str as $str) {
-                        $q->where('item.description', 'LIKE', "%".$str."%");
-                    }
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_items', [
+                    'query' => ['q' => $request->q],
+                    'headers' => $headers,
+                ]);
 
-                    $q->orWhere('item.item_code', 'LIKE', "%".$request->q."%");
-                });
-            })
-            ->select('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification', 'item.stock_uom')
-            ->groupBy('item.item_code', 'item.description', 'item.item_image_path', 'item.item_classification', 'item.stock_uom')
-            ->limit(8)->get();
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $items = $res['data'];
+                }
+            } catch (ConnectException $e) {
+                $items = [];
+            }
+        }
 
         $item_codes = collect($items)->map(function ($q){
             return $q->item_code;
         });
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->get();
+        $item_images = [];
+        if ($athenaerp_api && count($items) > 0) {
+            $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        }
+
         $item_image = collect($item_images)->groupBy('parent');
 
         $items_arr = [];
@@ -2018,16 +2032,15 @@ class ConsignmentController extends Controller
             ];
         }
 
-        return response()->json([
-            'items' => $items_arr
-        ]);
+        return response()->json(['items' => $items_arr]);
     }
 
     // /beginning_inv_items
     public function beginningInvItems(Request $request, $action, $branch, $id = null){
         if($request->ajax()){
-            $items = [];
+            $items = $item_description_list = $item_images = $athenaerp_api = $headers = [];
             $inv_name = null;
+            $api_connected = true;
             // get approved, for approval records and items with consigned qty
             $items_with_consigned_qty = DB::table('tabBin')->where('warehouse', $branch)->where('consigned_qty', '>', 0)->pluck('item_code');
 
@@ -2053,10 +2066,33 @@ class ConsignmentController extends Controller
                     ];
                 }
             }else{ // Create new beginning inventory entry
-                $bin_items = DB::table('tabBin as bin')->join('tabItem as item', 'bin.item_code', 'item.name')
-                    ->where('bin.warehouse', $branch)->where('bin.actual_qty', '>', 0)->where('bin.consigned_qty', 0)->whereNotIn('bin.item_code', $inv_items) // do not include approved and for approval items
-                    ->select('bin.warehouse', 'bin.item_code', 'bin.actual_qty', 'bin.stock_uom', 'item.description')->orderBy('bin.actual_qty', 'desc')
-                    ->get();
+                $bin_items = [];
+                $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+                if ($athenaerp_api) {
+                    try {
+                        $headers = [
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                            'Accept-Language' => 'en',
+                            'Accept' => 'application/json',
+                        ];
+
+                        $client = new \GuzzleHttp\Client();
+                        $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_items_without_beginning_inventory/' . $branch , [
+                            'query' => ['item_codes' => $inv_items->toArray()],
+                            'headers' => $headers,
+                        ]);
+
+                        if ($res->getStatusCode() == 200) {
+                            $res = json_decode((string) $res->getBody());
+                            $res = collect($res)->toArray();
+                            
+                            $bin_items = $res['data'];
+                        }
+                    } catch (ConnectException $e) {
+                        $api_connected = false;
+                    }
+                }
 
                 foreach($bin_items as $item){
                     $items[] = [
@@ -2070,13 +2106,14 @@ class ConsignmentController extends Controller
                 }
             }
 
-            $items = collect($items)->sortBy('item_description');
-
             $item_codes = collect($items)->map(function($q){
                 return $q['item_code'];
             });
 
-            $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
+            if ($athenaerp_api && $api_connected) {
+                $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+            }
+
             $item_images = collect($item_images)->groupBy('parent')->toArray();
 
             return view('consignment.beginning_inv_items', compact('items', 'branch', 'item_images', 'inv_name', 'inv_items'));
@@ -2093,8 +2130,9 @@ class ConsignmentController extends Controller
             $price = $request->price;
             $price = preg_replace("/[^0-9 .]/", "", $price);
 
-            $item_codes = $request->item_code;
-            $item_codes = collect(array_filter($item_codes))->unique(); // remove null values
+            $item_codes = collect(array_filter($request->item_code))->unique(); // remove null values
+            $item_descriptions = collect(array_filter($request->item_descriptions))->unique();
+            $stock_uoms = collect(array_filter($request->stock_uoms))->unique();
             $branch = $request->branch;
 
             if(!$item_codes){
@@ -2168,8 +2206,8 @@ class ConsignmentController extends Controller
                         'parent' => $inv_id,
                         'idx' => $i + 1,
                         'item_code' => $item_code,
-                        'item_description' => isset($item[$item_code]) ? $item[$item_code][0]->description : null,
-                        'stock_uom' => isset($item[$item_code]) ? $item[$item_code][0]->stock_uom : null,
+                        'item_description' => isset($item_descriptions[$item_code]) ? $item_descriptions[$item_code] : null,
+                        'stock_uom' => isset($stock_uoms[$item_code]) ? $stock_uoms[$item_code] : null,
                         'opening_stock' => $qty,
                         'stocks_displayed' => 0,
                         'status' => 'For Approval',
@@ -2231,8 +2269,8 @@ class ConsignmentController extends Controller
                         $values = [
                             'modified' => $now,
                             'modified_by' => Auth::user()->wh_user,
-                            'item_description' => isset($item[$item_code]) ? $item[$item_code][0]->description : null,
-                            'stock_uom' => isset($item[$item_code]) ? $item[$item_code][0]->stock_uom : null,
+                            'item_description' => isset($item_descriptions[$item_code]) ? $item_descriptions[$item_code]: null,
+                            'stock_uom' => isset($stock_uoms[$item_code]) ? $stock_uoms[$item_code] : null,
                             'opening_stock' => $qty,
                             'price' => $item_price,
                             'amount' => $item_price * $qty
@@ -2252,8 +2290,8 @@ class ConsignmentController extends Controller
                             'parent' => $request->inv_name,
                             'idx' => $idx,
                             'item_code' => $item_code,
-                            'item_description' => isset($item[$item_code]) ? $item[$item_code][0]->description : null,
-                            'stock_uom' => isset($item[$item_code]) ? $item[$item_code][0]->stock_uom : null,
+                            'item_description' => isset($item_descriptions[$item_code]) ? $item_descriptions[$item_code] : null,
+                            'stock_uom' => isset($stock_uoms[$item_code]) ? $stock_uoms[$item_code] : null,
                             'opening_stock' => $qty,
                             'stocks_displayed' => 0,
                             'status' => 'For Approval',
@@ -2307,6 +2345,7 @@ class ConsignmentController extends Controller
             DB::table('tabActivity Log')->insert($logs);
 
             DB::commit();
+
             return view('consignment.beginning_inv_success', compact('item_count', 'branch'));
         } catch (Exception $e) {
             DB::rollback();

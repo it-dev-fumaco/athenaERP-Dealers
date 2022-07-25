@@ -115,6 +115,8 @@
                     @endphp 
                     <td class="text-justify p-1 align-middle" colspan="3">
                         <input type="text" name="item_code[]" id="{{ $item['item_code'] }}-id" class="d-none" value="{{ $item['item_code'] }}" />
+                        <input type="text" name="item_descriptions[{{ $item['item_code'] }}]" class="d-none" value=" {!! strip_tags($item['item_description']) !!}" />
+                        <input type="text" name="stock_uoms[{{ $item['item_code'] }}]" class="d-none" value=" {{ ($item['stock_uom']) }}" />
                         <div class="d-flex flex-row justify-content-center align-items-center">
                             <div class="p-1 col-2 text-center">
                                 <a href="{{ asset('storage/') }}{{ $img }}" data-toggle="mobile-lightbox" data-gallery="{{ $item['item_code'] }}" data-title="{{ $item['item_code'] }}">
