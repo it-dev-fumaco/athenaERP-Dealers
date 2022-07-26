@@ -3049,7 +3049,7 @@ class ConsignmentController extends Controller
 
             $bin = DB::table('tabBin as bin')->join('tabItem as item', 'item.item_code', 'bin.item_code')
                 ->whereIn('bin.warehouse', array_filter([$source_warehouse, $target_warehouse]))->whereIn('bin.item_code', $item_codes)
-                ->select('item.item_code', 'item.description', 'item.item_name', 'bin.warehouse', 'item.stock_uom', 'bin.actual_qty', 'bin.consigned_qty')->get();
+                ->select('item.item_code', 'item.description', 'item.item_name', 'bin.warehouse', 'item.stock_uom', 'bin.consigned_qty')->get();
             
             $items = [];
             foreach($bin as $b){
@@ -3057,13 +3057,16 @@ class ConsignmentController extends Controller
                     'description' => $b->description,
                     'item_name' => $b->item_name,
                     'uom' => $b->stock_uom,
-                    'actual_qty' => $b->actual_qty,
                     'consigned_qty' => $b->consigned_qty
                 ];
             }
 
-            $beginning_inventory = DB::table('tabConsignment Beginning Inventory')->where('status', 'Approved')->where('branch_warehouse', $reference_warehouse)->pluck('name');
-            $inventory_items = DB::table('tabConsignment Beginning Inventory Item')->whereIn('parent', $beginning_inventory)->whereIn('item_code', $item_codes)->where('status', 'Approved')->select('item_code', 'price')->get();
+            $beginning_inventory = DB::table('tabConsignment Beginning Inventory')
+                ->where('status', 'Approved')->where('branch_warehouse', $reference_warehouse)->pluck('name');
+
+            $inventory_items = DB::table('tabConsignment Beginning Inventory Item')
+                ->whereIn('parent', $beginning_inventory)->whereIn('item_code', $item_codes)
+                ->where('status', 'Approved')->select('item_code', 'price')->get();
 
             $inventory_prices = [];
             foreach($inventory_items as $item){
@@ -3072,70 +3075,6 @@ class ConsignmentController extends Controller
                     'amount' => isset($transfer_qty[$item->item_code]) ? preg_replace("/[^0-9 .]/", "", $transfer_qty[$item->item_code]['transfer_qty']) * $item->price : $item->price
                 ];
             }
-
-            $latest_ste = DB::table('tabStock Entry')->where('naming_series', 'STEC-')->max('name');
-            $latest_ste_exploded = explode("-", $latest_ste);
-            $new_id = (($latest_ste) ? $latest_ste_exploded[1] : 0) + 1;
-            $new_id = str_pad($new_id, 6, '0', STR_PAD_LEFT);
-            $new_id = 'STEC-'.$new_id;
-
-            $stock_entry_data = [
-                'name' => $new_id,
-                'creation' => $now->toDateTimeString(),
-                'modified' => $now->toDateTimeString(),
-                'modified_by' => Auth::user()->full_name,
-                'owner' => Auth::user()->full_name,
-                'docstatus' => 0,
-                'idx' => 0,
-                'use_multi_level_bom' => 0,
-                'naming_series' => 'STEC-',
-                'posting_time' => $now->format('H:i:s'),
-                'to_warehouse' => $target_warehouse,
-                'title' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
-                'from_warehouse' => $source_warehouse,
-                'set_posting_time' => 0,
-                'from_bom' => 0,
-                'value_difference' => 0,
-                'company' => 'FUMACO Inc.',
-                'total_outgoing_value' => collect($inventory_prices)->sum('amount'),
-                'total_additional_costs' => 0,
-                'total_amount' => collect($inventory_prices)->sum('amount'),
-                'total_incoming_value' => collect($inventory_prices)->sum('amount'),
-                'posting_date' => $now->format('Y-m-d'),
-                'purpose' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
-                'stock_entry_type' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
-                'item_status' => 'Issued',
-                'transfer_as' => $request->transfer_as == 'Sales Return' ? null : $request->transfer_as,
-                'receive_as' => $request->transfer_as == 'Sales Return' ? $request->transfer_as : null,
-                'qty_repack' => 0,
-                // 'customer_1' => $target_warehouse,
-                'delivery_date' => $now->format('Y-m-d'),
-                'remarks' => 'Generated in AthenaERP'
-            ];
-
-            DB::table('tabStock Entry')->insert($stock_entry_data);
-
-            $from_msg = $request->transfer_as != 'Sales Return' ?  ' from '.$request->source_warehouse : null;
-      
-            $logs = [
-                'name' => uniqid(),
-                'creation' => $now->toDateTimeString(),
-                'modified' => $now->toDateTimeString(),
-                'modified_by' => Auth::user()->wh_user,
-                'owner' => Auth::user()->wh_user,
-                'docstatus' => 0,
-                'idx' => 0,
-                'subject' => $request->transfer_as . ' request' .$from_msg. ' to '.$target_warehouse. ' has been created by '.Auth::user()->full_name.' at '.$now->toDateTimeString(),
-                'content' => 'Consignment Activity Log',
-                'communication_date' => $now->toDateTimeString(),
-                'reference_doctype' => 'Stock Entry',
-                'reference_name' => $new_id,
-                'reference_owner' => Auth::user()->wh_user,
-                'user' => Auth::user()->wh_user,
-                'full_name' => Auth::user()->full_name,
-            ];
-
-            DB::table('tabActivity Log')->insert($logs);
 
             $sold_qty = [];
             if($request->transfer_as == 'Sales Return'){
@@ -3165,6 +3104,7 @@ class ConsignmentController extends Controller
                 }
             }
 
+            $stock_entry_detail = [];
             foreach($item_codes as $i => $item_code){
                 if(!isset($transfer_qty[$item_code])){
                     return redirect()->back()->with('error', 'Please enter transfer qty for '. $item_code);
@@ -3181,14 +3121,13 @@ class ConsignmentController extends Controller
                     }
                 }
 
-                $stock_entry_detail = [
+                $stock_entry_detail[] = [
                     'name' =>  uniqid(),
                     'creation' => $now->toDateTimeString(),
                     'modified' => $now->toDateTimeString(),
                     'modified_by' => Auth::user()->full_name,
                     'owner' => Auth::user()->full_name,
                     'docstatus' => 0,
-                    'parent' => $new_id,
                     'parentfield' => 'items',
                     'parenttype' => 'Stock Entry',
                     'idx' => $i + 1,
@@ -3196,7 +3135,6 @@ class ConsignmentController extends Controller
                     'transfer_qty' => $transfer_qty[$item_code]['transfer_qty'],
                     'expense_account' => 'Cost of Goods Sold - FI',
                     'cost_center' => 'Main - FI',
-                    'actual_qty' => isset($items[$reference_warehouse][$item_code]) ? $items[$reference_warehouse][$item_code]['actual_qty'] : 0,
                     's_warehouse' => $source_warehouse,
                     'item_name' => isset($items[$reference_warehouse][$item_code]) ? $items[$reference_warehouse][$item_code]['item_name'] : null,
                     'additional_cost' => 0,
@@ -3219,14 +3157,11 @@ class ConsignmentController extends Controller
                     'target_warehouse_location' => $target_warehouse,
                     'source_warehouse_location' => $source_warehouse,
                     'status' => 'Issued',
-                    'return_reference' => $new_id,
                     'session_user' => Auth::user()->full_name,
                     'issued_qty' => $transfer_qty[$item_code]['transfer_qty'],
                     'date_modified' => $now->toDateTimeString(),
                     'remarks' => 'Generated in AthenaERP'
                 ];
-
-                DB::table('tabStock Entry Detail')->insert($stock_entry_detail);
 
                 // source warehouse
                 if($request->transfer_as == 'For Return' && isset($items[$reference_warehouse][$item_code])){
@@ -3273,7 +3208,92 @@ class ConsignmentController extends Controller
 
             $purpose = $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer';
 
+            $stock_entry_data = [
+                'creation' => $now->toDateTimeString(),
+                'modified' => $now->toDateTimeString(),
+                'modified_by' => Auth::user()->full_name,
+                'owner' => Auth::user()->full_name,
+                'docstatus' => 0,
+                'idx' => 0,
+                'use_multi_level_bom' => 0,
+                'naming_series' => 'STEC-',
+                'posting_time' => $now->format('H:i:s'),
+                'to_warehouse' => $target_warehouse,
+                'title' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
+                'from_warehouse' => $source_warehouse,
+                'set_posting_time' => 0,
+                'from_bom' => 0,
+                'value_difference' => 0,
+                'company' => 'FUMACO Inc.',
+                'total_outgoing_value' => collect($inventory_prices)->sum('amount'),
+                'total_additional_costs' => 0,
+                'total_amount' => collect($inventory_prices)->sum('amount'),
+                'total_incoming_value' => collect($inventory_prices)->sum('amount'),
+                'posting_date' => $now->format('Y-m-d'),
+                'purpose' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
+                'stock_entry_type' => $request->transfer_as == 'Sales Return' ? 'Material Receipt' : 'Material Transfer',
+                'item_status' => 'Issued',
+                'transfer_as' => $request->transfer_as == 'Sales Return' ? null : $request->transfer_as,
+                'receive_as' => $request->transfer_as == 'Sales Return' ? $request->transfer_as : null,
+                'qty_repack' => 0,
+                'delivery_date' => $now->format('Y-m-d'),
+                'remarks' => 'Generated in AthenaERP',
+                'items' => $stock_entry_detail
+            ];
+          
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/x-www-form-urlencoded',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('POST', $athenaerp_api->base_url.'/api/create_stock_entry', [
+                        'form_params' => $stock_entry_data,
+                        'headers' => $headers,
+                    ]);
+
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $result = $res['data'];
+                    } else {
+                        return redirect()->back()->with('error', 'Something went wrong. Please try again.');
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
+            }
+
+            $from_msg = $request->transfer_as != 'Sales Return' ?  ' from '.$request->source_warehouse : null;
+      
+            $logs = [
+                'name' => uniqid(),
+                'creation' => $now->toDateTimeString(),
+                'modified' => $now->toDateTimeString(),
+                'modified_by' => Auth::user()->wh_user,
+                'owner' => Auth::user()->wh_user,
+                'docstatus' => 0,
+                'idx' => 0,
+                'subject' => $request->transfer_as . ' request' .$from_msg. ' to '.$target_warehouse. ' has been created by '.Auth::user()->full_name.' at '.$now->toDateTimeString(),
+                'content' => 'Consignment Activity Log',
+                'communication_date' => $now->toDateTimeString(),
+                'reference_doctype' => 'Stock Entry',
+                'reference_name' => $result->reference_stock_entry,
+                'reference_owner' => Auth::user()->wh_user,
+                'user' => Auth::user()->wh_user,
+                'full_name' => Auth::user()->full_name,
+            ];
+
+            DB::table('tabActivity Log')->insert($logs);
+
             DB::commit();
+
             return redirect()->route('stock_transfers', ['purpose' => $purpose])->with('success', 'Stock transfer request has been submitted.');
         } catch (Exception $e) {
             DB::rollback();
@@ -3414,7 +3434,7 @@ class ConsignmentController extends Controller
 
         $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
-        $stock_transfers = [];
+        $stock_transfers = $stock_transfer_items = [];
         $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
         if ($athenaerp_api) {
             try {
@@ -4020,33 +4040,27 @@ class ConsignmentController extends Controller
                 }
             }
    
-            $check = Carbon::parse($start)->between($period_from, $period_to);
-    
             $duration = Carbon::parse($start)->addDay()->format('F d, Y') . ' - ' . Carbon::now()->format('F d, Y');
             if ($last_audit_date->endOfDay()->lt($end) && $beginning_inventory_transaction_date) {
-                if (!$check) {
-                    $pending[] = [
-                        'store' => $store,
-                        'beginning_inventory_date' => $beginning_inventory_transaction_date,
-                        'last_inventory_audit_date' => $last_inventory_audit_date,
-                        'duration' => $duration,
-                        'is_late' => $is_late,
-                        'promodisers' => $promodisers
-                    ];
-                }
+                $pending[] = [
+                    'store' => $store,
+                    'beginning_inventory_date' => $beginning_inventory_transaction_date,
+                    'last_inventory_audit_date' => $last_inventory_audit_date,
+                    'duration' => $duration,
+                    'is_late' => $is_late,
+                    'promodisers' => $promodisers
+                ];
              }
 
              if(!$beginning_inventory_transaction_date) {
-                 if (!$check) {
-                    $pending[] = [
-                        'store' => $store,
-                        'beginning_inventory_date' => $beginning_inventory_transaction_date,
-                        'last_inventory_audit_date' => $last_inventory_audit_date,
-                        'duration' => $duration,
-                        'is_late' => $is_late,
-                        'promodisers' => $promodisers
-                    ];
-                }
+                $pending[] = [
+                    'store' => $store,
+                    'beginning_inventory_date' => $beginning_inventory_transaction_date,
+                    'last_inventory_audit_date' => $last_inventory_audit_date,
+                    'duration' => $duration,
+                    'is_late' => $is_late,
+                    'promodisers' => $promodisers
+                ];
             }
         }
 
