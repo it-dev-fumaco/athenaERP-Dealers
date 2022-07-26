@@ -2918,15 +2918,36 @@ class ConsignmentController extends Controller
                 ->groupBy('csri.item_code')->get();
 
             // Deduct already submitted sales returns
-            $submitted_sales_returns = DB::table('tabStock Entry as ste')
-                ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-                ->where('ste.to_warehouse', $branch)->where('ste.purpose', 'Material Receipt')->where('ste.receive_as', 'Sales Return')->where('ste.naming_series', 'STEC-')->where('ste.docstatus', '<', 2)
-                ->selectRaw('sted.item_code, SUM(sted.transfer_qty) as qty')->groupBy('sted.item_code')->get();
-            $submitted_sales_returns = collect($submitted_sales_returns)->groupBy('item_code');
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_submitted_sales_returns/' . $branch, [
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $submitted_sales_returns = $res['data'];
+                    }
+                } catch (ConnectException $e) {
+                    $submitted_sales_returns = [];
+                }
+            }
 
             $sold_qty = [];
             foreach($sold_items as $sold){
-                $ste_qty = isset($submitted_sales_returns[$sold->item_code]) ? $submitted_sales_returns[$sold->item_code][0]->qty : 0;
+                $sold_item_code = $sold->item_code;
+                $ste_qty = isset($submitted_sales_returns->$sold_item_code) ? $submitted_sales_returns->$sold_item_code[0]->qty : 0;
                 $qty = $sold->qty - $ste_qty;
                 if($qty > 0){
                     $sold_qty[$sold->item_code] = [
@@ -3085,16 +3106,36 @@ class ConsignmentController extends Controller
                     ->selectRaw('csri.item_code, SUM(csri.qty) as qty')
                     ->groupBy('csri.item_code')->get();
 
-                // Deduct already submitted sales returns
-                $submitted_sales_returns = DB::table('tabStock Entry as ste')
-                ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-                ->where('ste.to_warehouse', $reference_warehouse)->where('ste.purpose', 'Material Receipt')->where('ste.receive_as', 'Sales Return')->where('ste.naming_series', 'STEC-')->where('ste.docstatus', '<', 2)
-                ->selectRaw('sted.item_code, SUM(sted.transfer_qty) as qty')->groupBy('sted.item_code')->get();
-                $submitted_sales_returns = collect($submitted_sales_returns)->groupBy('item_code');
+                $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+                if ($athenaerp_api) {
+                    try {
+                        $headers = [
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                            'Accept-Language' => 'en',
+                            'Accept' => 'application/json',
+                        ];
+                
+                        $client = new \GuzzleHttp\Client();
+                        $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_submitted_sales_returns/' . $reference_warehouse, [
+                            'headers' => $headers,
+                        ]);
+        
+                        if ($res->getStatusCode() == 200) {
+                            $res = json_decode((string) $res->getBody());
+                            $res = collect($res)->toArray();
+                            
+                            $submitted_sales_returns = $res['data'];
+                        }
+                    } catch (ConnectException $e) {
+                        $submitted_sales_returns = [];
+                    }
+                }
 
                 $sold_qty = [];
                 foreach($sold_items as $sold){
-                    $ste_qty = isset($submitted_sales_returns[$sold->item_code]) ? $submitted_sales_returns[$sold->item_code][0]->qty : 0;
+                    $sold_item_code = $sold->item_code;
+                    $ste_qty = isset($submitted_sales_returns->$sold_item_code) ? $submitted_sales_returns->$sold_item_code[0]->qty : 0;
                     $qty = $sold->qty - $ste_qty;
                     if($qty > 0){
                         $sold_qty[$sold->item_code] = [
@@ -3193,12 +3234,9 @@ class ConsignmentController extends Controller
                             'modified' => $now->toDateTimeString(),
                             'modified_by' => Auth::user()->full_name,
                             'owner' => Auth::user()->full_name,
-                            'docstatus' => 0,
-                            'idx' => 0,
                             'warehouse' => $target_warehouse,
                             'item_code' => $item_code,
                             'stock_uom' => isset($items[$target_warehouse][$item_code]) ? $items[$target_warehouse][$item_code]['uom'] : null,
-                            'valuation_rate' => isset($inventory_prices[$item_code]) ? $inventory_prices[$item_code]['price'] : 0,
                             'consigned_qty' => $transfer_qty[$item_code]['transfer_qty'],
                             'consignment_price' => isset($inventory_prices[$item_code]) ? $inventory_prices[$item_code]['price'] : 0
                         ]);
