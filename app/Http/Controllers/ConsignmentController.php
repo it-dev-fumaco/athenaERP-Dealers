@@ -1693,12 +1693,44 @@ class ConsignmentController extends Controller
     public function promodiserReceiveDelivery(Request $request, $id){
         DB::beginTransaction();
         try {
-            $wh = DB::table('tabStock Entry')->where('name', $id)->first();
+            $wh = $ste_items = $headers = [];
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_entry_details/' . $id, [
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $result = $res['data'];
+                        $wh = $result->parent;
+                        $ste_items = $result->child;
+                    } else {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        $result = $res['data'];
+
+                        return redirect()->back()->with('error', $result->message);
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
+            }
+
             if(!$wh){
                 return redirect()->back()->with('error', $id.' not found.');
             }
-
-            $ste_items = DB::table('tabStock Entry Detail')->where('parent', $id)->get();
 
             $source_warehouses = collect($ste_items)->map(function($q){
                 return $q->s_warehouse;
@@ -1808,19 +1840,16 @@ class ConsignmentController extends Controller
                         'modified' => $now->toDateTimeString(),
                         'modified_by' => Auth::user()->full_name,
                         'owner' => Auth::user()->full_name,
-                        'docstatus' => 0,
-                        'idx' => 0,
                         'warehouse' => $branch,
                         'item_code' => $item->item_code,
                         'stock_uom' => $item->stock_uom,
-                        'valuation_rate' => $basic_rate,
                         'consigned_qty' => isset($request->receive_delivery) ? $item->transfer_qty : 0,
                         'consignment_price' => $basic_rate
                     ]);
                 }
 
                 // Stock Entry Detail
-                $ste_details_update = [
+                $ste_details_update[$item->name] = [
                     'modified' => Carbon::now()->toDateTimeString(),
                     'modified_by' => Auth::user()->wh_user,
                     'basic_rate' => $basic_rate,
@@ -1830,11 +1859,9 @@ class ConsignmentController extends Controller
                 ];
 
                 if($item->consignment_status != 'Received' && isset($request->receive_delivery)){
-                    $ste_details_update['consignment_status'] = 'Received';
-                    $ste_details_update['consignment_date_received'] = Carbon::now()->toDateTimeString();
+                    $ste_details_update[$item->name]['consignment_status'] = 'Received';
+                    $ste_details_update[$item->name]['consignment_date_received'] = Carbon::now()->toDateTimeString();
                 }
-
-                DB::table('tabStock Entry Detail')->where('name', $item->name)->update($ste_details_update);
 
                 $previous_price = isset($previous_check[$item->item_code]) ? (float)$previous_check[$item->item_code][0]->price : 0;
                 if((float)$basic_rate != $previous_price){
@@ -1867,50 +1894,76 @@ class ConsignmentController extends Controller
                 ];
             }
 
-            $source_warehouse = $wh->from_warehouse ? $wh->from_warehouse : null;
-            if(!$source_warehouse){
-                $source_warehouse = isset($source_warehouses[0]) ? $source_warehouses[0] : null;
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/x-www-form-urlencoded',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('POST', $athenaerp_api->base_url.'/api/update_received_items', [
+                        'form_params' => $ste_details_update,
+                        'headers' => $headers,
+                    ]);
+
+                    if ($res->getStatusCode() == 200) {
+                        $source_warehouse = $wh->from_warehouse ? $wh->from_warehouse : null;
+                        if(!$source_warehouse){
+                            $source_warehouse = isset($source_warehouses[0]) ? $source_warehouses[0] : null;
+                        }
+            
+                        $target_warehouse = $wh->to_warehouse ? $wh->to_warehouse : null;
+                        if(!$target_warehouse){
+                            $target_warehouse = isset($target_warehouses[0]) ? $target_warehouses[0] : null;
+                        }
+            
+                        $logs = [
+                            'name' => uniqid(),
+                            'creation' => Carbon::now()->toDateTimeString(),
+                            'modified' => Carbon::now()->toDateTimeString(),
+                            'modified_by' => Auth::user()->wh_user,
+                            'owner' => Auth::user()->wh_user,
+                            'docstatus' => 0,
+                            'idx' => 0,
+                            'subject' => 'Stock Transfer from '.$source_warehouse.' to '.$target_warehouse.' has been received by '.Auth::user()->full_name. ' at '.Carbon::now()->toDateTimeString(),
+                            'content' => 'Consignment Activity Log',
+                            'communication_date' => Carbon::now()->toDateTimeString(),
+                            'reference_doctype' => 'Stock Entry',
+                            'reference_name' => $id,
+                            'reference_owner' => Auth::user()->wh_user,
+                            'user' => Auth::user()->wh_user,
+                            'full_name' => Auth::user()->full_name,
+                        ];
+            
+                        DB::table('tabActivity Log')->insert($logs);
+            
+                        $message = null;
+                        if(isset($request->update_price)){
+                            $message = 'Prices are successfully updated!';
+                        }
+            
+                        if(isset($request->receive_delivery)){
+                            $message = collect($received_items)->sum('qty').' Item(s) is successfully received and added to your store inventory!';
+                        }
+            
+                        $received_items['message'] = $message;
+                        $received_items['branch'] = $target_warehouse;
+            
+                        DB::commit();
+
+                        return redirect()->back()->with('success', $received_items);
+                    } else {
+                        return redirect()->back()->with('error', 'Something went wrong. Please try again.');
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
             }
 
-            $target_warehouse = $wh->to_warehouse ? $wh->to_warehouse : null;
-            if(!$target_warehouse){
-                $target_warehouse = isset($target_warehouses[0]) ? $target_warehouses[0] : null;
-            }
-
-            $logs = [
-                'name' => uniqid(),
-                'creation' => Carbon::now()->toDateTimeString(),
-                'modified' => Carbon::now()->toDateTimeString(),
-                'modified_by' => Auth::user()->wh_user,
-                'owner' => Auth::user()->wh_user,
-                'docstatus' => 0,
-                'idx' => 0,
-                'subject' => 'Stock Transfer from '.$source_warehouse.' to '.$target_warehouse.' has been received by '.Auth::user()->full_name. ' at '.Carbon::now()->toDateTimeString(),
-                'content' => 'Consignment Activity Log',
-                'communication_date' => Carbon::now()->toDateTimeString(),
-                'reference_doctype' => 'Stock Entry',
-                'reference_name' => $id,
-                'reference_owner' => Auth::user()->wh_user,
-                'user' => Auth::user()->wh_user,
-                'full_name' => Auth::user()->full_name,
-            ];
-
-            DB::table('tabActivity Log')->insert($logs);
-
-            $message = null;
-            if(isset($request->update_price)){
-                $message = 'Prices are successfully updated!';
-            }
-
-            if(isset($request->receive_delivery)){
-                $message = collect($received_items)->sum('qty').' Item(s) is successfully received and added to your store inventory!';
-            }
-
-            $received_items['message'] = $message;
-            $received_items['branch'] = $target_warehouse;
-
-            DB::commit();
-            return redirect()->back()->with('success', $received_items);
+            return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
         } catch (Exception $e) {
             DB::rollback();
             return redirect()->back()->with('error', 'An error occured. Please try again later');
