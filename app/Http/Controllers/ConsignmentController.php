@@ -3360,14 +3360,15 @@ class ConsignmentController extends Controller
         $api_connected = true;
         $consignment_stores = [];
         if(Auth::user()->user_group == 'Promodiser'){
-            $consignment_stores = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse');
+            $consignment_stores = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse')->toArray();
         }
 
         $beginning_inventory_start = DB::table('tabConsignment Beginning Inventory')->orderBy('transaction_date', 'asc')->pluck('transaction_date')->first();
 
         $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
-        $athenaerp_api = DB::table('api_setup')->where('type', 'erp_api')->first();
+        $stock_transfers = [];
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
         if ($athenaerp_api) {
             try {
                 $headers = [
@@ -3402,7 +3403,6 @@ class ConsignmentController extends Controller
                 $numOfPages = $next_page = $total_records = 0;
                 $has_next_page = $has_previous_page = false;
                 $current_page = 1;
-                $stock_transfers = [];
                 $api_connected = false;
             }
         }
