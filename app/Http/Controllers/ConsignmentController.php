@@ -3320,24 +3320,61 @@ class ConsignmentController extends Controller
     public function stockTransferCancel($id){
         DB::beginTransaction();
         try {
-            $stock_entry = DB::table('tabStock Entry')->where('name', $id)->first();
+            $stock_entry = $stock_entry_detail = $headers = [];
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_entry_details/' . $id, [
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $result = $res['data'];
+                        $stock_entry = $result->parent;
+                        $stock_entry_detail = $result->child;
+                    } else {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        $result = $res['data'];
 
-            if(!$stock_entry){
-                return redirect()->back()->with('error', 'Stock Entry does not exist or Stock Entry is already deleted.');
+                        return redirect()->back()->with('error', $result->message);
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
             }
 
             $source_warehouse = $stock_entry->from_warehouse;
             $target_warehouse = $stock_entry->to_warehouse;
 
-            $stock_entry_detail = DB::table('tabStock Entry Detail')->where('parent', $stock_entry->name)->get();
-            
+            $source_warehouses = collect($stock_entry_detail)->map(function ($q){
+                return $q->s_warehouse;
+            })->unique()->toArray();
+
+            $target_warehouses = collect($stock_entry_detail)->map(function ($q){
+                return $q->t_warehouse;
+            })->unique()->toArray();
+
+            $warehouses = array_merge($source_warehouses, $target_warehouses);
+
             $item_codes = collect($stock_entry_detail)->map(function ($q){
                 return $q->item_code;
             });
 
             $now = Carbon::now();
             
-            $bin = DB::table('tabBin')->whereIn('warehouse', array_filter([$source_warehouse, $target_warehouse]))->whereIn('item_code', $item_codes)->get();
+            $bin = DB::table('tabBin')->whereIn('warehouse', array_filter($warehouses))->whereIn('item_code', $item_codes)->get();
 
             $bin_arr = [];
             foreach($bin as $b){
@@ -3386,35 +3423,52 @@ class ConsignmentController extends Controller
                 }
             }
 
-            DB::table('tabStock Entry')->where('name', $id)->delete();
-            DB::table('tabStock Entry Detail')->where('parent', $id)->delete();
+            if ($athenaerp_api) {
+                try {
+                    $res = $client->request('POST', $athenaerp_api->base_url.'/api/cancel_stock_entry/' . $id, [
+                        'headers' => $headers,
+                    ]);
 
-            $source_warehouse = $source_warehouse ? $source_warehouse : $stock_entry_detail[0]->s_warehouse;
-            $target_warehouse = $target_warehouse ? $target_warehouse : $stock_entry_detail[0]->t_warehouse;
-            $from_msg = $transaction != 'Sales Return' ? ' from '.$source_warehouse : null;
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $source_warehouse = $source_warehouse ? $source_warehouse : $stock_entry_detail[0]->s_warehouse;
+                        $target_warehouse = $target_warehouse ? $target_warehouse : $stock_entry_detail[0]->t_warehouse;
+                        $from_msg = $transaction != 'Sales Return' ? ' from '.$source_warehouse : null;
+            
+                        $logs = [
+                            'name' => uniqid(),
+                            'creation' => $now->toDateTimeString(),
+                            'modified' => $now->toDateTimeString(),
+                            'modified_by' => Auth::user()->wh_user,
+                            'owner' => Auth::user()->wh_user,
+                            'docstatus' => 0,
+                            'idx' => 0,
+                            'subject' => $transaction.' request'.$from_msg.' to '.$target_warehouse.' has been deleted by '.Auth::user()->full_name.' at '.$now->toDateTimeString(),
+                            'content' => 'Consignment Activity Log',
+                            'communication_date' => $now->toDateTimeString(),
+                            'reference_doctype' => 'Stock Entry',
+                            'reference_name' => $id,
+                            'reference_owner' => Auth::user()->wh_user,
+                            'user' => Auth::user()->wh_user,
+                            'full_name' => Auth::user()->full_name,
+                        ];
+            
+                        DB::table('tabActivity Log')->insert($logs);
+            
+                        DB::commit();
 
-            $logs = [
-                'name' => uniqid(),
-                'creation' => $now->toDateTimeString(),
-                'modified' => $now->toDateTimeString(),
-                'modified_by' => Auth::user()->wh_user,
-                'owner' => Auth::user()->wh_user,
-                'docstatus' => 0,
-                'idx' => 0,
-                'subject' => $transaction.' request'.$from_msg.' to '.$target_warehouse.' has been deleted by '.Auth::user()->full_name.' at '.$now->toDateTimeString(),
-                'content' => 'Consignment Activity Log',
-                'communication_date' => $now->toDateTimeString(),
-                'reference_doctype' => 'Stock Entry',
-                'reference_name' => $id,
-                'reference_owner' => Auth::user()->wh_user,
-                'user' => Auth::user()->wh_user,
-                'full_name' => Auth::user()->full_name,
-            ];
+                        return redirect()->route('stock_transfers', ['purpose' => $stock_entry->purpose])->with('success', $transaction.' has been cancelled.');
+                    } else {
+                        return redirect()->back()->with('error', 'Something went wrong. Please try again.');
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
+            }
 
-            DB::table('tabActivity Log')->insert($logs);
-
-            DB::commit();
-            return redirect()->route('stock_transfers', ['purpose' => $stock_entry->purpose])->with('success', $transaction.' has been cancelled.');
+            return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
         } catch (Exception $e) {
             DB::rollback();
             return redirect()->back()->with('error', 'Something went wrong. Please try again later');
