@@ -2456,6 +2456,7 @@ class ConsignmentController extends Controller
     }
 
     public function stockTransferReport(Request $request){
+        $page = $request->page ? $request->page : 1;
         $assigned_consignment_store = DB::table('tabAssigned Consignment Warehouse')
             ->where('parent', Auth::user()->frappe_userid)->pluck('warehouse');
 
@@ -2475,34 +2476,78 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $ste_item_codes = [];
+        $ste_item_codes = $headers = $stock_entry = $stock_entry_detail = [];
+        $api_connected = true;
         if (in_array(Auth::user()->user_group, ['Consignment Supervisor', 'Director'])) { // for supervisor stock transfers list
-            $stock_entry = DB::table('tabStock Entry')
-                ->when($request->tab1_q, function ($q) use ($request){
-                    return $q->where('name', 'like', '%'.$request->tab1_q.'%');
-                })
-                ->when($request->source_warehouse, function ($q) use ($request){
-                    return $q->where('from_warehouse', $request->source_warehouse);
-                })
-                ->when($request->target_warehouse, function ($q) use ($request){
-                    return $q->where('to_warehouse', $request->target_warehouse);
-                })
-                ->when($request->tab1_status && $request->tab1_status != 'All', function ($q) use ($request){
-                    return $q->where('docstatus', $request->tab1_status);
-                })
-                ->when($request->tab1_purpose, function ($q) use ($request){
-                    return $q->where('transfer_as', $request->tab1_purpose);
-                })
-                ->where('naming_series', 'STEC-')
-                ->orderBy('docstatus', 'asc')
-                ->orderBy('creation', 'desc')
-                ->paginate(20, ['*'], 'stock_transfers');
-
-            $reference = collect($stock_entry->items())->map(function ($q){
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_transfer_list', [
+                        'query' => [
+                            'user_group' => Auth::user()->user_group,
+                            'name' => $request->tab1_q,
+                            'from_warehouse' => $request->source_warehouse,
+                            'to_warehouse' => $request->target_warehouse,
+                            'page' => $page,
+                            'docstatus' => $request->tab1_status,
+                            'transfer_as' => $request->tab1_purpose
+                        ],
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $result = $res['data'];
+    
+                        $numOfPages = $result->last_page;
+                        $current_page = $result->current_page;
+                        $has_next_page = $result->next_page_url;
+                        $has_previous_page = $result->prev_page_url;
+                        $next_page = $current_page + 1;
+                        $total_records = $result->total;
+                
+                        $stock_entry = $result->data;
+                    }
+                } catch (ConnectException $e) {
+                    $numOfPages = $next_page = $total_records = 0;
+                    $has_next_page = $has_previous_page = false;
+                    $current_page = 1;
+                    $api_connected = false;
+                }
+            }
+    
+            $reference_ste = collect($stock_entry)->map(function ($q){
                 return $q->name;
-            });
+            })->unique();
 
-            $stock_entry_detail = DB::table('tabStock Entry Detail')->whereIn('parent', $reference)->get();
+            if ($athenaerp_api && $api_connected) {
+                try {
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_transfer_items', [
+                        'query' => ['reference_ste' => $reference_ste->toArray()],
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $stock_entry_detail = $res['data'];
+                    }
+                } catch (ConnectException $e) {
+                    $stock_entry_detail = [];
+                }
+            }
+
             $ste_items = collect($stock_entry_detail)->groupBy('parent');
 
             $ste_item_codes = collect($stock_entry_detail)->map(function ($q){
@@ -2512,7 +2557,7 @@ class ConsignmentController extends Controller
             $item_codes = collect($item_codes)->merge($ste_item_codes);
         }
 
-        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)->select('parent', 'image_path')->get();
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
         $item_image = collect($item_images)->groupBy('parent');
 
         $items_arr = [];
@@ -2546,15 +2591,15 @@ class ConsignmentController extends Controller
                 'promodiser' => $item->promodiser,
                 'image' => $img,
                 'webp' => $webp,
-                'creation' => Carbon::parse($item->creation)->format('M d, Y - h:i a'),
+                'creation' => Carbon::parse($item->creation)->format('M d, Y - h:i A'),
                 'test' => $orig_exists,
                 'test2' => $webp_exists
             ];
         }
 
         if (in_array(Auth::user()->user_group, ['Consignment Supervisor', 'Director'])) {
-            $source_warehouses = collect($stock_entry->items())->map(function ($q){
-                return $q->from_warehouse;
+            $source_warehouses = collect($stock_entry_detail)->map(function ($q){
+                return $q->s_warehouse;
             })->unique();
 
             $bin = DB::table('tabBin')->whereIn('warehouse', $source_warehouses)->whereIn('item_code', $ste_item_codes)->get();
@@ -2568,33 +2613,35 @@ class ConsignmentController extends Controller
             $ste_arr = [];
             foreach($stock_entry as $ste){
                 $items = [];
+                $from_warehouse = $to_warehouse = null;
                 if(isset($ste_items[$ste->name])){
+                    $from_warehouse = $ste_items[$ste->name][0]->s_warehouse;
+                    $to_warehouse = $ste_items[$ste->name][0]->t_warehouse; 
                     foreach($ste_items[$ste->name] as $item){
-                        $orig_exists = 0;
-                        $webp_exists = 0;
-
+                        $orig_exists = $webp_exists = 0;
+    
                         $img = '/icon/no_img.png';
                         $webp = '/icon/no_img.webp';
-
+    
                         if(isset($item_image[$item->item_code])){
                             $orig_exists = Storage::disk('public')->exists('/img/'.$item_image[$item->item_code][0]->image_path) ? 1 : 0;
                             $webp_exists = Storage::disk('public')->exists('/img/'.explode('.', $item_image[$item->item_code][0]->image_path)[0].'.webp') ? 1 : 0;
-
+    
                             $webp = $webp_exists == 1 ? '/img/'.explode('.', $item_image[$item->item_code][0]->image_path)[0].'.webp' : null;
                             $img = $orig_exists == 1 ? '/img/'.$item_image[$item->item_code][0]->image_path : null;
-
+    
                             if($orig_exists == 0 && $webp_exists == 0){
                                 $img = '/icon/no_img.png';
                                 $webp = '/icon/no_img.webp';
                             }
                         }
-
+    
                         $items[] = [
                             'item_code' => $item->item_code,
                             'description' => $item->description,
                             'transfer_qty' => $item->transfer_qty,
                             'uom' => $item->stock_uom,
-                            'consigned_qty' => isset($bin_arr[$ste->from_warehouse][$item->item_code]) ? $bin_arr[$ste->from_warehouse][$item->item_code]['consigned_qty'] : 0,
+                            'consigned_qty' => isset($bin_arr[$item->s_warehouse][$item->item_code]) ? $bin_arr[$item->s_warehouse][$item->item_code]['consigned_qty'] : 0,
                             'image' => $img,
                             'webp' => $webp
                         ];
@@ -2603,9 +2650,9 @@ class ConsignmentController extends Controller
 
                 $ste_arr[] = [
                     'name' => $ste->name,
-                    'creation' => Carbon::parse($ste->creation)->format('M d, Y - h:i a'),
-                    'source_warehouse' => $ste->from_warehouse,
-                    'target_warehouse' => $ste->to_warehouse,
+                    'creation' => Carbon::parse($ste->creation)->format('M d, Y - h:i A'),
+                    'source_warehouse' => $from_warehouse,
+                    'target_warehouse' => $to_warehouse,
                     'status' => $ste->docstatus == 1 ? 'Approved' : 'For Approval',
                     'transfer_as' => $ste->transfer_as,
                     'submitted_by' => $ste->owner,
@@ -2613,7 +2660,7 @@ class ConsignmentController extends Controller
                 ];
             }
 
-            return view('consignment.view_damaged_items_list', compact('items_arr', 'damaged_items', 'ste_arr', 'stock_entry'));
+            return view('consignment.view_damaged_items_list', compact('items_arr', 'damaged_items', 'ste_arr', 'stock_entry', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
         }
 
         return view('consignment.damaged_items_list', compact('items_arr'));
