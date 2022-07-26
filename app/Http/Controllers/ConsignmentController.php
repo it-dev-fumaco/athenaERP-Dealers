@@ -1535,114 +1535,158 @@ class ConsignmentController extends Controller
 
     // /promodiser/delivery_report/{type}
     public function promodiserDeliveryReport($type, Request $request){
-        $assigned_consignment_store = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse');
+        $page = $request->page ? $request->page : 1;
+
+        $assigned_consignment_store = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse')->toArray();
 
         $beginning_inventory_start = DB::table('tabConsignment Beginning Inventory')->orderBy('transaction_date', 'asc')->pluck('transaction_date')->first();
 
         $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
-        $delivery_report = DB::table('tabStock Entry as ste')
-            ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-            ->when($beginning_inventory_start_date, function ($q) use ($beginning_inventory_start_date){ // do not include ste's of received items
-                return $q->whereDate('ste.delivery_date', '>=', $beginning_inventory_start_date);
-            })
-            ->whereIn('ste.transfer_as', ['Consignment', 'Store Transfer'])
-            ->where('ste.purpose', 'Material Transfer')
-            ->where('ste.docstatus', '<', 2)
-            ->whereIn('ste.item_status', ['For Checking', 'Issued'])
-            ->whereIn('sted.t_warehouse', $assigned_consignment_store)
-            ->select('ste.name', 'ste.delivery_date', 'ste.item_status', 'ste.from_warehouse', 'sted.t_warehouse', 'sted.s_warehouse', 'ste.creation', 'ste.posting_time', 'sted.item_code', 'sted.description', 'sted.transfer_qty', 'sted.stock_uom', 'sted.basic_rate', 'sted.consignment_status', 'ste.transfer_as', 'ste.docstatus', 'sted.consignment_date_received')
-            ->orderBy('ste.creation', 'desc')->get();
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        $headers = [];
+        $api_connected = true;
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-        $delivery_report_q = collect($delivery_report)->groupBy('name');
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_delivery_list', [
+                    'query' => ['beginning_inventory_start_date' => $beginning_inventory_start_date, 'assigned_consignment_store' => $assigned_consignment_store, 'page' => $page],
+                    'headers' => $headers,
+                ]);
 
-        $item_codes = collect($delivery_report)->map(function ($q){
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $result = $res['data'];
+
+                    $numOfPages = $result->last_page;
+                    $current_page = $result->current_page;
+                    $has_next_page = $result->next_page_url;
+                    $has_previous_page = $result->prev_page_url;
+                    $next_page = $current_page + 1;
+                    $total_records = $result->total;
+            
+                    $delivery_report = $result->data;
+                }
+            
+            } catch (ConnectException $e) {
+                $numOfPages = $next_page = $total_records = 0;
+                $has_next_page = $has_previous_page = false;
+                $current_page = 1;
+                $delivery_report = [];
+                $api_connected = false;
+            }
+        }
+
+        if ($athenaerp_api && $api_connected) {
+            $reference_ste = collect($delivery_report)->map(function ($q){
+                return $q->name;
+            })->unique();
+
+            try {
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_transfer_items', [
+                    'query' => ['reference_ste' => $reference_ste->toArray()],
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $delivery_report_items = $res['data'];
+                }
+            } catch (ConnectException $e) {
+                $delivery_report_items = [];
+            }
+        }
+
+        $item_codes = collect($delivery_report_items)->map(function ($q){
             return $q->item_code;
         });
 
-        $source_warehouses = collect($delivery_report)->map(function ($q){
+        $source_warehouses = collect($delivery_report_items)->map(function ($q){
             return $q->s_warehouse;
         });
 
-        $target_warehouses = collect($delivery_report)->map(function ($q){
+        $target_warehouses = collect($delivery_report_items)->map(function ($q){
             return $q->t_warehouse;
         });
+
+        $delivery_report_items = collect($delivery_report_items)->groupBy('parent');
 
         $warehouses = collect($source_warehouses)->merge($target_warehouses)->unique();
 
         $item_prices = DB::table('tabBin')->whereIn('warehouse', $warehouses)->whereIn('item_code', $item_codes)->select('warehouse', 'consignment_price', 'item_code')->get();
         $prices_arr = [];
-
         foreach($item_prices as $item){
             $prices_arr[$item->warehouse][$item->item_code] = [
                 'price' => $item->consignment_price
             ];
         }
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
         $item_image = collect($item_images)->groupBy('parent');
 
         $now = Carbon::now();
 
         $ste_arr = [];
-        foreach($delivery_report_q as $ste => $row){
+        foreach($delivery_report as $row){
             $items_arr = [];
-            foreach($row as $item){
-                $ref_warehouse = $row[0]->transfer_as == 'Consignment' ? $row[0]->t_warehouse : $row[0]->s_warehouse;
-                $items_arr[] = [
-                    'item_code' => $item->item_code,
-                    'description' => $item->description,
-                    'image' => isset($item_image[$item->item_code]) ? $item_image[$item->item_code][0]->image_path : null,
-                    'img_count' => isset($item_image[$item->item_code]) ? count($item_image[$item->item_code]) : 0,
-                    'delivered_qty' => $item->transfer_qty,
-                    'stock_uom' => $item->stock_uom,
-                    'price' => isset($prices_arr[$ref_warehouse][$item->item_code]) ? $prices_arr[$ref_warehouse][$item->item_code]['price'] : 0,
-                    'delivery_status' => $item->consignment_status,
-                    'date_received' => $item->consignment_date_received
-                ];
+            $from_warehouse = $to_warehouse = null;
+            if(isset($delivery_report_items[$row->name])){
+                $from_warehouse = $delivery_report_items[$row->name][0]->s_warehouse;
+                $to_warehouse = $delivery_report_items[$row->name][0]->t_warehouse; 
+                foreach($delivery_report_items[$row->name] as $item){
+                    $ref_warehouse = $row->transfer_as == 'Consignment' ? $item->t_warehouse : $item->s_warehouse;
+                    $items_arr[] = [
+                        'item_code' => $item->item_code,
+                        'description' => $item->description,
+                        'image' => isset($item_image[$item->item_code]) ? $item_image[$item->item_code][0]->image_path : null,
+                        'img_count' => isset($item_image[$item->item_code]) ? count($item_image[$item->item_code]) : 0,
+                        'delivered_qty' => $item->transfer_qty,
+                        'stock_uom' => $item->stock_uom,
+                        'price' => isset($prices_arr[$ref_warehouse][$item->item_code]) ? $prices_arr[$ref_warehouse][$item->item_code]['price'] : 0,
+                        'delivery_status' => $item->consignment_status,
+                        'date_received' => $item->consignment_date_received
+                    ];
+                }
             }
 
             $status_check = collect($items_arr)->map(function($q){
                 return $q['delivery_status'] ? 1 : 0; // return 1 if status is Received
             })->toArray();
 
-            $delivery_date = Carbon::parse($row[0]->delivery_date);
+            $delivery_date = Carbon::parse($row->delivery_date);
           
-            if($row[0]->item_status == 'Issued' && $now > $delivery_date){
+            if($row->item_status == 'Issued' && $now > $delivery_date){
                 $status = 'Delivered';
             }else{
                 $status = 'Pending';
             }
 
             $ste_arr[] = [
-                'name' => $row[0]->name,
-                'from' => $row[0]->from_warehouse,
-                'to_consignment' => $row[0]->t_warehouse,
+                'name' => $row->name,
+                'from' => $from_warehouse,
+                'to_consignment' => $to_warehouse,
                 'status' => $status,
                 'items' => $items_arr,
-                'creation' => $row[0]->creation,
-                'delivery_date' => $row[0]->delivery_date,
+                'creation' => $row->creation,
+                'delivery_date' => $row->delivery_date,
                 'delivery_status' => min($status_check) == 0 ? 0 : 1, // check if there are still items to receive
-                'posting_time' => $row[0]->posting_time,
+                'posting_time' => $row->posting_time,
                 'date_received' => min($status_check) == 1 ? collect($items_arr)->min('date_received') : null
             ];
         }
 
-        
-        $currentPage = LengthAwarePaginator::resolveCurrentPage();
-        // Create a new Laravel collection from the array data3
-        $itemCollection = collect($ste_arr);
-        // Define how many items we want to be visible in each page
-        $perPage = 20;
-        // Slice the collection to get the items to display in current page
-        $currentPageItems = $itemCollection->slice(($currentPage * $perPage) - $perPage, $perPage)->all();
-        // Create our paginator and pass it to the view
-        $paginatedItems= new LengthAwarePaginator($currentPageItems , count($itemCollection), $perPage);
-        // set url path for generted links
-        $paginatedItems->setPath($request->url());
-        $ste_arr = $paginatedItems;
-
-        return view('consignment.promodiser_delivery_report', compact('delivery_report', 'ste_arr', 'type'));
+        return view('consignment.promodiser_delivery_report', compact('ste_arr', 'type', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
     }
 
     // /promodiser/receive/{id}

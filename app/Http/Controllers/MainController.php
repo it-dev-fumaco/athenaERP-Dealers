@@ -338,7 +338,7 @@ class MainController extends Controller
                     ->select('cb.branch_warehouse', 'cbi.item_code', 'cb.status')->get();
                 $beginning_inventory_items = collect($beginning_inventory_items)->groupBy('branch_warehouse');
 
-                $bin_items = DB::table('tabBin')->whereIn('warehouse', $assigned_consignment_store)->where('consigned_qty', 0)->where('actual_qty', '>', 0)->select('warehouse', 'item_code', 'consigned_qty')->get();
+                $bin_items = DB::table('tabBin')->whereIn('warehouse', $assigned_consignment_store)->where('consigned_qty', 0)->select('warehouse', 'item_code', 'consigned_qty')->get();
                 $bin_items = collect($bin_items)->groupBy('warehouse');
 
                 $branches = array_keys($bin_items->toArray());

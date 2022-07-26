@@ -233,7 +233,46 @@
                                 </tbody>
                             </table>
                             <div class="mt-3 ml-3 clearfix pagination d-block">
-                                <div class="col-md-4 float-right">{{ $ste_arr->links() }}</div>
+                                @if(isset($total_records) && $total_records > 0)
+                                @php
+                                    $ends_count = 2;  //how many items at the ends (before and after [...])
+                                    $middle_count = 2;  //how many items before and after current page
+                                    $dots = false;
+                                    $prev = $current_page - 1;
+                                @endphp
+                                <ul class="pagination">
+                                    <li class="page-item {{ (1 < $current_page) ? '' : 'disabled' }}">
+                                    <a href="{{ \Request::url() .'?page='.$prev }}" class="page-link">Previous</a>
+                                    </li>
+                                    @for ($i = 1; $i <= $numOfPages; $i++) 
+                                    @if ($i == $current_page)
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ $i }}</span>
+                                    </li>
+                                    @php
+                                        $dots = true;
+                                    @endphp
+                                    @else
+                                        @if ($i <= $ends_count || ($current_page && $i >= $current_page - $middle_count && $i <= $current_page + $middle_count) || $i > $numOfPages - $ends_count) 
+                                        <li class="page-item"><a class="page-link" href="{{ \Request::url() .'?page='.$i }}">{{ $i }}</a></li>
+                                        @php
+                                            $dots = true;
+                                        @endphp
+                                        @elseif ($dots)
+                                        <li class="page-item disabled">
+                                            <a class="page-link" href="#">&hellip;</a>
+                                        </li>
+                                        @php
+                                        $dots = false;
+                                        @endphp
+                                        @endif
+                                    @endif
+                                    @endfor
+                                    <li class="page-item {{ ($current_page < $numOfPages || -1 == $numOfPages) ? '' : 'disabled' }}">
+                                        <a class="page-link" href="{{ \Request::url() .'?page='.$next_page }}">Next</a>
+                                    </li>
+                                </ul>
+                                @endif
                             </div>
                         </div>
                     </div>
