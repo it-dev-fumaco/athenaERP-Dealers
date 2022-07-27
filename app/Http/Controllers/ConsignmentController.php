@@ -4047,7 +4047,7 @@ class ConsignmentController extends Controller
                 'img_count' => $img_count,
                 'total_value' => $total_value,
                 'opening_qty' => number_format($opening_qty),
-                'sold_qty' => $total_sold,
+                'sold_qty' => number_format($total_sold),
                 'audit_qty' => number_format($row->qty)
             ];
         }
@@ -4407,48 +4407,78 @@ class ConsignmentController extends Controller
     }
 
     public function getAuditDeliveries(Request $request) {
-        $store = $request->store;
-        $cutoff = $request->cutoff;
-        $cutoff_start = $cutoff_end = null;
-        if ($cutoff) {
-            $cutoff = explode('/', $request->cutoff);
-            $cutoff_start = $cutoff[0];
-            $cutoff_end = $cutoff[1];
-        }
+        $list = [];
 
-        $list = DB::table('tabStock Entry as ste')
-            ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-            ->whereIn('ste.transfer_as', ['Consignment', 'Store Transfer'])
-            ->where('ste.purpose', 'Material Transfer')->where('ste.docstatus', 1)
-            ->whereBetween('ste.delivery_date', [$cutoff_start, $cutoff_end])
-            ->where('sted.t_warehouse', $store)
-            ->select('ste.name', 'ste.delivery_date', 'sted.s_warehouse', 'sted.t_warehouse', 'ste.creation', 'sted.item_code', 'sted.description', 'sted.transfer_qty', 'sted.stock_uom', 'sted.basic_rate', 'sted.basic_amount', 'ste.owner')->orderBy('ste.creation', 'desc')->get();
+        $query = [
+            'store' => $request->store,
+            'cutoff' => $request->cutoff,
+        ];
+
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
+
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_audit_deliveries', [
+                    'query' => $query,
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $list = $res['data'];
+                }
+            
+            } catch (ConnectException $e) {
+                $list = [];
+            }
+        }
 
         return view('consignment.supervisor.tbl_audit_deliveries', compact('list'));
     }
 
     public function getAuditReturns(Request $request) {
-        $store = $request->store;
-        $cutoff = $request->cutoff;
-        $cutoff_start = $cutoff_end = null;
-        if ($cutoff) {
-            $cutoff = explode('/', $request->cutoff);
-            $cutoff_start = $cutoff[0];
-            $cutoff_end = $cutoff[1];
-        }
+        $list = [];
 
-        $list = DB::table('tabStock Entry as ste')
-            ->join('tabStock Entry Detail as sted', 'ste.name', 'sted.parent')
-            ->whereBetween('ste.delivery_date', [$cutoff_start, $cutoff_end])
-            ->where('sted.t_warehouse', $store)
-            ->where(function($q) {
-                $q->whereIn('ste.transfer_as', ['For Return', 'Store Transfer'])
-                    ->orWhereIn('ste.receive_as', ['Sales Return']);
-            })
-            ->whereIn('ste.purpose', ['Material Transfer', 'Material Receipt'])
-            ->where('ste.docstatus', 1)
-            ->select('ste.name', 'ste.delivery_date', 'sted.s_warehouse', 'sted.t_warehouse', 'ste.creation', 'sted.item_code', 'sted.description', 'sted.transfer_qty', 'sted.stock_uom', 'sted.basic_rate', 'sted.basic_amount', 'ste.owner')
-            ->orderBy('ste.creation', 'desc')->get();
+        $query = [
+            'store' => $request->store,
+            'cutoff' => $request->cutoff,
+        ];
+
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
+
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_audit_returns', [
+                    'query' => $query,
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $list = $res['data'];
+                }
+            } catch (ConnectException $e) {
+                $list = [];
+            }
+        }
 
         return view('consignment.supervisor.tbl_audit_returns', compact('list'));
     }

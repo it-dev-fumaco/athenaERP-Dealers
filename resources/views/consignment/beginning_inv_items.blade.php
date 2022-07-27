@@ -73,6 +73,7 @@
                                                 <div class="p-1" style="font-size: 9.5pt !important;">
                                                     <span class="font-italic" id="new-classification"></span> <br>
                                                     <span id="new-description"></span>
+                                                    <span class="d-none" id="new-uom"></span>
                                                 </div>
                                             </td>
                                         </tr>
@@ -114,9 +115,9 @@
                         $img_count = array_key_exists($item['item_code'], $item_images) ? count($item_images[$item['item_code']]) : 0;
                     @endphp 
                     <td class="text-justify p-1 align-middle" colspan="3">
-                        <input type="text" name="item_code[]" id="{{ $item['item_code'] }}-id" class="d-none" value="{{ $item['item_code'] }}" />
-                        <input type="text" name="item_descriptions[{{ $item['item_code'] }}]" class="d-none" value=" {!! strip_tags($item['item_description']) !!}" />
-                        <input type="text" name="stock_uoms[{{ $item['item_code'] }}]" class="d-none" value=" {{ ($item['stock_uom']) }}" />
+                        <input type="hidden" name="item_code[]" id="{{ $item['item_code'] }}-id" value="{{ $item['item_code'] }}" />
+                        <input type="hidden" name="item_descriptions[{{ $item['item_code'] }}]" value=" {!! strip_tags($item['item_description']) !!}" />
+                        <input type="hidden" name="stock_uoms[{{ $item['item_code'] }}]" value=" {{ ($item['stock_uom']) }}" />
                         <div class="d-flex flex-row justify-content-center align-items-center">
                             <div class="p-1 col-2 text-center">
                                 <a href="{{ asset('storage/') }}{{ $img }}" data-toggle="mobile-lightbox" data-gallery="{{ $item['item_code'] }}" data-title="{{ $item['item_code'] }}">
@@ -511,6 +512,7 @@
         $(document).on('select2:select', '#item-selection', function(e){
             $('#new-item-code').text(e.params.data.id); // item code
             $('#new-description').text(e.params.data.description); // description
+            $('#new-uom').text(e.params.data.uom); // description
             $('#new-classification').text(e.params.data.classification); // classification
             $('#new-src-img').attr('src', e.params.data.image); // image
             $('#new-src-img-webp').attr('src', e.params.data.image_webp); // webp
@@ -561,6 +563,7 @@
         function add_item(table){
             var item_code = $('#new-item-code').text();
             var description = $('#new-description').text();
+            var uom = $('#new-uom').text();
             var classification = $('#new-classification').text();
             var image = $('#new-img-txt').text();
             var webp = $('#new-webp-txt').text();
@@ -584,7 +587,9 @@
 
 			var row = '<tr id="' + item_code + '" class="' + item_code + '">' +
                 '<td class="text-justify p-1 align-middle" colspan="3">' +
-                    '<input type="text" name="item_code[]" id="' + item_code + '-id" class="d-none" value="' + item_code + '" />' +
+                    '<input type="hidden" name="item_code[]" id="' + item_code + '-id" class="d-none" value="' + item_code + '" />' +
+                    '<input type="hidden" name="item_descriptions[' + item_code + ']" value="' + description + '" />' +
+                    '<input type="hidden" name="stock_uoms[' + item_code + ']" value="' + uom + '" />' +
                     '<div class="d-flex flex-row justify-content-center align-items-center">' +
                         '<div class="p-1 col-2 text-center">' +
                             '<picture>' +

@@ -10,28 +10,28 @@
       <div class="row p-0 m-0">
         @if ($branches_with_pending_beginning_inventory)
           <div class="modal fade" id="pendingBeginningInventoryModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
-            <div class="modal-dialog" role="document">
+            <div class="modal-dialog modal-dialog-centered" role="document">
               <div class="modal-content">
-                <div class="modal-header bg-navy">
+                <div class="modal-header pt-2 pb-2 bg-navy">
                   <h5 class="modal-title" id="exampleModalLabel"><i class="fa fa-info-circle"></i> Reminder</h5>
-                  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true" style="color: #fff">&times;</span>
+                  <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
                   </button>
                 </div>
-                <div class="modal-body" style="font-size: 10pt;">
+                <div class="modal-body p-2" style="font-size: 10pt;">
                   <span>Please enter your beginning inventory for:</span>
                   <table class="table table-striped mt-2">
                     <thead>
                       <tr>
-                        <th class="text-center" style="width: 70%;">Branch</th>
-                        <th class="text-center">-</th>
+                        <th class="text-center p-2" style="width: 70%;">Branch / Store</th>
+                        <th class="text-center p-2">-</th>
                       </tr>
                     </thead>
                     <tbody>
                       @foreach (array_keys($branches_with_pending_beginning_inventory) as $branch)
                         <tr>
-                          <td>{{ $branch }}</td>
-                          <td class="text-center"><a href="/beginning_inventory?branch={{ $branch }}" class="btn btn-primary btn-xs" style="font-size: 9pt"><i class="fa fa-plus"></i> Create</a></td>
+                          <td class="p-2 align-middle">{{ $branch }}</td>
+                          <td class="text-center p-2 align-middle"><a href="/beginning_inventory?branch={{ $branch }}" class="btn btn-primary btn-xs" style="font-size: 9pt"><i class="fa fa-plus"></i> Create</a></td>
                         </tr>
                       @endforeach
                     </tbody>
@@ -150,7 +150,7 @@
                   <tr>
                     <td class="p-2">
                       <a href="#" data-toggle="modal" data-target="#{{ $ste['name'] }}-Modal">{{ $ste['to_consignment'] }}</a>
-                      <small class="d-block"><b>{{ $ste['name'] }}</b> | <b>Delivery Date:</b> {{ Carbon\Carbon::parse($ste['delivery_date'])->format('M d, Y').' - '.Carbon\Carbon::parse($ste['posting_time'])->format('h:i a') }}</small>
+                      <small class="d-block"><b>{{ $ste['name'] }}</b> | <b>Delivery Date:</b> {{ Carbon\Carbon::parse($ste['delivery_date'])->format('M d, Y').' - '.Carbon\Carbon::parse($ste['posting_time'])->format('h:i A') }}</small>
                       <span class="badge badge-{{ $ste['status'] == 'Pending' ? 'warning' : 'success' }}">{{ $ste['status'] }}</span>
                       @if ($ste['status'] == 'Delivered')
                         <span class="badge badge-{{ $ste['delivery_status'] == 0 ? 'warning' : 'success' }}">{{ $ste['delivery_status'] == 0 ? 'To Receive' : 'Received' }}</span>
@@ -170,7 +170,7 @@
                             <div class="modal-body">
                               <form></form>
                               <h5 class="text-center font-responsive font-weight-bold m-0">{{ $ste['to_consignment'] }}</h5>
-                              <small class="d-block text-center mb-2">{{ $ste['name'] }} | Delivery Date: {{ Carbon\Carbon::parse($ste['delivery_date'])->format('M d, Y').' - '.Carbon\Carbon::parse($ste['posting_time'])->format('h:i a') }}</small>
+                              <small class="d-block text-center mb-2">{{ $ste['name'] }} | Delivery Date: {{ Carbon\Carbon::parse($ste['delivery_date'])->format('M. d, Y').' - '.Carbon\Carbon::parse($ste['posting_time'])->format('h:i A') }}</small>
                               <div class="callout callout-info text-center">
                                 <small><i class="fas fa-info-circle"></i> Once items are received, stocks will be automatically added to your current inventory.</small>
                               </div>
