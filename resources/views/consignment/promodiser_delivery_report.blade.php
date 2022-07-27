@@ -26,7 +26,11 @@
                                         <div class="modal-body" style="font-size: 10pt;">
                                             <span>{{ $received['message'] }}</span> <br>
                                             <span>Branch: <b>{{ $received['branch'] }}</b></span> <br>
+                                            @if (isset($received['is_cancelled']))
+                                            <span>Total Amount: <b>₱ {{ number_format($received['amount'], 2) }}</b></span>
+                                            @else
                                             <span>Total Amount: <b>₱ {{ number_format(collect($received)->sum('amount'), 2) }}</b></span>
+                                            @endif
                                         </div>
                                     </div>
                                 </div>

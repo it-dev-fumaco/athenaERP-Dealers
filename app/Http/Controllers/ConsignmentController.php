@@ -1544,7 +1544,7 @@ class ConsignmentController extends Controller
         $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
         $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
-        $headers = [];
+        $headers = $delivery_report_items = [];
         $api_connected = true;
         if ($athenaerp_api) {
             try {
@@ -1974,8 +1974,40 @@ class ConsignmentController extends Controller
     public function promodiserCancelReceivedDelivery($id){
         DB::beginTransaction();
         try {
-            $stock_entry = DB::table('tabStock Entry')->where('name', $id)->first();
-            $received_items = DB::table('tabStock Entry Detail')->where('parent', $id)->get();
+            $stock_entry = $received_items = $headers = [];
+            $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $client = new \GuzzleHttp\Client();
+                    $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_entry_details/' . $id, [
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        
+                        $result = $res['data'];
+                        $stock_entry = $result->parent;
+                        $received_items = $result->child;
+                    } else {
+                        $res = json_decode((string) $res->getBody());
+                        $res = collect($res)->toArray();
+                        $result = $res['data'];
+
+                        return redirect()->back()->with('error', $result->message);
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
+            }
 
             $item_codes = collect($received_items)->map(function ($q){
                 return $q->item_code;
@@ -2022,57 +2054,80 @@ class ConsignmentController extends Controller
                     $src_branch = $stock_entry->from_warehouse ? $stock_entry->from_warehouse : $item->s_warehouse;
                     DB::table('tabBin')->where('item_code', $item->item_code)->where('warehouse', $src_branch)->update([
                         'modified' => Carbon::now()->toDateTimeString(),
-                        'modified_by' => Auth::user()->full_name,
+                        'modified_by' => Auth::user()->wh_user,
                         'consigned_qty' => $consigned_qty[$src_branch][$item->item_code]['consigned_qty'] + $item->transfer_qty
                     ]);
                 }
 
                 DB::table('tabBin')->where('item_code', $item->item_code)->where('warehouse', $branch)->update([
                     'modified' => Carbon::now()->toDateTimeString(),
-                    'modified_by' => Auth::user()->full_name,
+                    'modified_by' => Auth::user()->wh_user,
                     'consigned_qty' => $consigned_qty[$branch][$item->item_code]['consigned_qty'] - $item->transfer_qty
                 ]);
-                
-                DB::table('tabStock Entry Detail')->where('parent', $id)->where('item_code', $item->item_code)->update([
-                    'modified' => Carbon::now()->toDateTimeString(),
-                    'modified_by' => Auth::user()->full_name,
-                    'consignment_status' => null,
-                    'consignment_date_received' => null
-                ]);
             }
 
-            $source_warehouse = $stock_entry->from_warehouse ? $stock_entry->from_warehouse : null;
-            if(!$source_warehouse){
-                $source_warehouse = isset($received_items[0]) ? $received_items[0]->s_warehouse : null;
+            if ($athenaerp_api) {
+                try {
+                    $headers = [
+                        'Content-Type' => 'application/x-www-form-urlencoded',
+                        'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                        'Accept-Language' => 'en',
+                        'Accept' => 'application/json',
+                    ];
+            
+                    $res = $client->request('POST', $athenaerp_api->base_url.'/api/cancel_received_items/' . $id, [
+                        'form_params' => ['modified_by' => Auth::user()->wh_user],
+                        'headers' => $headers,
+                    ]);
+    
+                    if ($res->getStatusCode() == 200) {
+                        $source_warehouse = $stock_entry->from_warehouse ? $stock_entry->from_warehouse : null;
+                        if(!$source_warehouse){
+                            $source_warehouse = isset($received_items[0]) ? $received_items[0]->s_warehouse : null;
+                        }
+
+                        $target_warehouse = $stock_entry->to_warehouse ? $stock_entry->to_warehouse : null;
+                        if(!$target_warehouse){
+                            $target_warehouse = isset($received_items[0]) ? $received_items[0]->t_warehouse : null;
+                        }
+
+                        $logs = [
+                            'name' => uniqid(),
+                            'creation' => Carbon::now()->toDateTimeString(),
+                            'modified' => Carbon::now()->toDateTimeString(),
+                            'modified_by' => Auth::user()->wh_user,
+                            'owner' => Auth::user()->wh_user,
+                            'docstatus' => 0,
+                            'idx' => 0,
+                            'subject' => 'Stock Transfer from '.$source_warehouse.' to '.$target_warehouse.' has been cancelled by '.Auth::user()->full_name. ' at '.Carbon::now()->toDateTimeString(),
+                            'content' => 'Consignment Activity Log',
+                            'communication_date' => Carbon::now()->toDateTimeString(),
+                            'reference_doctype' => 'Stock Entry',
+                            'reference_name' => $id,
+                            'reference_owner' => Auth::user()->wh_user,
+                            'user' => Auth::user()->wh_user,
+                            'full_name' => Auth::user()->full_name,
+                        ];
+
+                        DB::table('tabActivity Log')->insert($logs);
+
+                        DB::commit();
+
+                        return redirect()->back()->with('success', [
+                            'message' => 'Received Item(s) Cancelled',
+                            'branch' => $target_warehouse,
+                            'is_cancelled' => true,
+                            'amount' => collect($received_items)->sum('basic_amount')
+                        ]);
+                    } else {
+                        return redirect()->back()->with('error', 'Something went wrong. Please try again.');
+                    }
+                } catch (ConnectException $e) {
+                    return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
+                }
             }
 
-            $target_warehouse = $stock_entry->to_warehouse ? $stock_entry->to_warehouse : null;
-            if(!$target_warehouse){
-                $target_warehouse = isset($received_items[0]) ? $received_items[0]->t_warehouse : null;
-            }
-
-            $logs = [
-                'name' => uniqid(),
-                'creation' => Carbon::now()->toDateTimeString(),
-                'modified' => Carbon::now()->toDateTimeString(),
-                'modified_by' => Auth::user()->wh_user,
-                'owner' => Auth::user()->wh_user,
-                'docstatus' => 0,
-                'idx' => 0,
-                'subject' => 'Stock Transfer from '.$source_warehouse.' to '.$target_warehouse.' has been cancelled by '.Auth::user()->full_name. ' at '.Carbon::now()->toDateTimeString(),
-                'content' => 'Consignment Activity Log',
-                'communication_date' => Carbon::now()->toDateTimeString(),
-                'reference_doctype' => 'Stock Entry',
-                'reference_name' => $id,
-                'reference_owner' => Auth::user()->wh_user,
-                'user' => Auth::user()->wh_user,
-                'full_name' => Auth::user()->full_name,
-            ];
-
-            DB::table('tabActivity Log')->insert($logs);
-
-            DB::commit();
-            return redirect()->back()->with('success', 'Received Item(s) Cancelled');
+            return redirect()->back()->with('error', 'Unable to connect to API. Please try again later.');
         } catch (Exception $e) {
             DB::rollback();
             return redirect()->back()->with('error', 'An error occured. Please try again later');
@@ -4585,116 +4640,47 @@ class ConsignmentController extends Controller
 
     //             DB::table('tabConsignment Sales Report Item')->insert($child_data);
     //         }
+    //     } catch (ConnectException $e) {
+    //         $items = [];
     //     }
 
-    //     // inventory audit
-    //     $product_sold = DB::table('tabConsignment Inventory Audit')->orderBy('creation', 'asc')->get();
+    //     $data = $new_items = [];
+    //     if (count($items) > 0) {
+    //         foreach ($items as $item) {
+    //             if (!in_array($item->item_code, $existing_bin_items)) {
+    //                 $data[] = [
+    //                     'name' => uniqid(),
+    //                     'creation' => Carbon::now()->toDateTimeString(),
+    //                     'modified' => Carbon::now()->toDateTimeString(),
+    //                     'modified_by' => Auth::user()->full_name,
+    //                     'owner' => Auth::user()->full_name,
+    //                     'docstatus' => 0,
+    //                     'idx' => 0,
+    //                     'warehouse' => $branch,
+    //                     'item_code' => $item->item_code,
+    //                     'stock_uom' => $item->stock_uom,
+    //                     'consigned_qty' => $item->consigned_qty,
+    //                     'consignment_price' => $item->price
+    //                 ];
+    //             }
 
-    //     foreach($product_sold as $row) {
-    //         $latest_id = DB::table('tabConsignment Inventory Audit Report')->max('name');
-    //         $latest_id_exploded = explode("-", $latest_id);
-    //         $new_id = (($latest_id) ? $latest_id_exploded[1] : 0) + 1;
-    //         $new_id = str_pad($new_id, 7, '0', STR_PAD_LEFT);
-    //         $new_id = 'IAR-'.$new_id;
-
-    //         $existing = DB::table('tabConsignment Inventory Audit Report')
-    //             ->where('transaction_date', $row->transaction_date)
-    //             ->where('branch_warehouse', $row->branch_warehouse)
-    //             ->where('cutoff_period_from', $row->cutoff_period_from)
-    //             ->where('cutoff_period_to', $row->cutoff_period_to)
-    //             ->where('audit_date_from', $row->audit_date_from)
-    //             ->where('audit_date_to', $row->audit_date_to)
-    //             ->where('promodiser', $row->promodiser)
-    //             ->first();
-
-    //         $grand_total = $total_items = 0;
-    //         if (!$existing) {
-    //             $parent_data = [
-    //                 'name' => $new_id,
-    //                 'creation' => $row->creation,
-    //                 'modified' => $row->modified,
-    //                 'modified_by' => $row->modified_by,
-    //                 'owner' => $row->owner,
-    //                 'docstatus' => 0,
-    //                 'parent' => null,
-    //                 'parentfield' => null,
-    //                 'parenttype' => null,
-    //                 'idx' => 0,
-    //                 'transaction_date' => $row->transaction_date,
-    //                 'branch_warehouse' => $row->branch_warehouse,
-    //                 'grand_total' => $row->amount,
-    //                 'promodiser' => $row->promodiser,
-    //                 'status' => $row->status,
-    //                 'cutoff_period_from' => $row->cutoff_period_from,
-    //                 'cutoff_period_to' => $row->cutoff_period_to,
-    //                 'audit_date_from' => $row->audit_date_from,
-    //                 'audit_date_to' => $row->audit_date_to,
-    //                 'total_items' => 1,
-    //             ];
-
-    //             DB::table('tabConsignment Inventory Audit Report')->insert($parent_data);
-
-    //             $child_data = [
-    //                 'name' => uniqid(),
-    //                 'creation' => $row->creation,
-    //                 'modified' => $row->modified,
-    //                 'modified_by' => $row->modified_by,
-    //                 'owner' => $row->owner,
-    //                 'docstatus' => 0,
-    //                 'parent' => $new_id,
-    //                 'parentfield' => 'items',
-    //                 'parenttype' => 'Consignment Inventory Audit Report',
-    //                 'idx' => 1,
-    //                 'item_code' => $row->item_code,
-    //                 'description' => $row->description,
-    //                 'qty' => $row->qty,
-    //                 'price' => $row->price,
-    //                 'amount' => $row->amount,
-    //                 'available_stock_on_transaction' => $row->available_stock_on_transaction
-    //             ];
-
-    //             DB::table('tabConsignment Inventory Audit Report Item')->insert($child_data);
+    //             if (!in_array($item->item_code, $existing_item)) {
+    //                 $new_items[] = [
+    //                     'name' => $item->item_code,
+    //                     'item_code' => $item->item_code,
+    //                     'stock_uom' => $item->stock_uom,
+    //                     'description' => $item->description
+    //                 ];
+    //             }
+    //         }
+    
+    //         if (count($data) > 0) {
+    //             DB::table('tabBin')->insert($data);
     //         }
 
-    //         if ($existing) {
-    //             $grand_total += $existing->grand_total + $row->amount;
-    //             $total_items += $existing->total_items + 1;
-    //             $child_data = [
-    //                 'name' => uniqid(),
-    //                 'creation' => $row->creation,
-    //                 'modified' => $row->modified,
-    //                 'modified_by' => $row->modified_by,
-    //                 'owner' => $row->owner,
-    //                 'docstatus' => 0,
-    //                 'parent' => $existing->name,
-    //                 'parentfield' => 'items',
-    //                 'parenttype' => 'Consignment Inventory Audit Report',
-    //                 'idx' => 1,
-    //                 'item_code' => $row->item_code,
-    //                 'description' => $row->description,
-    //                 'qty' => $row->qty,
-    //                 'price' => $row->price,
-    //                 'amount' => $row->amount,
-    //                 'available_stock_on_transaction' => $row->available_stock_on_transaction
-    //             ];
-
-    //             DB::table('tabConsignment Inventory Audit Report')->where('name', $existing->name)->update(['grand_total' => $grand_total, 'total_items' => $total_items]);
-
-    //             DB::table('tabConsignment Inventory Audit Report Item')->insert($child_data);
+    //         if (count($new_items) > 0) {
+    //             DB::table('tabItem')->insert($new_items);
     //         }
-    //     }
-
-    //     DB::commit();
-    // }
-
-    // public function updatebinconsignmentprice() {
-    //    $items = DB::table('tabConsignment Beginning Inventory as a')
-    //         ->join('tabConsignment Beginning Inventory Item as b', 'a.name', 'b.parent')
-    //         ->where('a.status', 'Approved')
-    //         ->select('branch_warehouse', 'item_code', 'price')->get();
-
-    //     foreach ($items as $r) {
-    //         DB::table('tabBin')->where('warehouse', $r->branch_warehouse)->where('item_code', $r->item_code)->update(['consignment_price' => $r->price]);
     //     }
     // }
 }
