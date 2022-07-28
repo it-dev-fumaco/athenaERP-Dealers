@@ -595,14 +595,14 @@ class MainController extends Controller
                         'get_total' => $request->get_total,
                         'name' => Auth::user()->name,
                         'wh_user' => Auth::user()->wh_user,
-                        'department' => Auth::user()->department
+                        'department' => Auth::user()->department,
+                        'page' => $request->page,
                     ],
                     'headers' => $headers,
                 ]);
 
                 if ($res->getStatusCode() == 200) {
                     $res = (array) json_decode((string) $res->getBody());
-                    // $res = collect($res)->toArray();
                     
                     $list = $res['data'];
                 }
@@ -618,10 +618,6 @@ class MainController extends Controller
         $all = (array) ($list->all);
         $item_groups = (array) ($list->item_groups);
         $item_group_array = (array) ($list->item_group_array);
-
-        // dd($item_group_array['Finished Goods']);
-
-        // dd($item_groups);
         $breadcrumbs = $list->breadcrumbs;
         $total_items = $list->total_items;
         $root = $list->root;
@@ -1296,47 +1292,46 @@ class MainController extends Controller
     }
 
     public function get_select_filters(Request $request){
-        $warehouses = DB::table('tabWarehouse')->where('is_group', 0)->where('disabled', 0)
-            ->where('category', 'Physical')
-            ->selectRaw('name as id, name as text')->orderBy('name', 'asc')->get();
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        $list = [];
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-        $item_groups = DB::table('tabItem Group')->where('is_group', 0)->where('name','LIKE', '%'.$request->q.'%')
-            ->where('show_in_erpinventory', 1)->selectRaw('name as id, name as text')->orderBy('name', 'asc')->get();//pluck('name');
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_select_filters', [
+                    'query' => ['q' => $request->q],
+                    'headers' => $headers,
+                ]);
 
-        $item_classification = DB::table('tabItem Classification')
-            ->orderBy('name', 'asc')->pluck('name');
+                if ($res->getStatusCode() == 200) {
+                    $res = json_decode((string) $res->getBody());
+                    $res = collect($res)->toArray();
+                    
+                    $list = $res['data'];
 
-        $item_class_filter = DB::table('tabItem Classification')->where('name', 'LIKE', '%'.$request->q.'%')->selectRaw('name as id, name as text')->orderBy('name', 'asc')->get();
-
-        $brand_filter = DB::table('tabBrand')->where('name', 'LIKE', '%'.$request->q.'%')->selectRaw('name as id, name as text')->orderBy('name', 'asc')->get();
-
-        $Athena_wh_users = DB::table('tabAthena Transactions')->groupBy('warehouse_user')->where('warehouse_user','LIKE', '%'.$request->q.'%')
-            ->selectRaw('warehouse_user as id, warehouse_user as text')->get();
-
-        $Athena_src_wh = DB::table('tabAthena Transactions')->groupBy('source_warehouse')->where('source_warehouse','LIKE', '%'.$request->q.'%')
-            ->where('source_warehouse', '!=', '')->selectRaw('source_warehouse as id, source_warehouse as text')->get();
-
-        $Athena_to_wh = DB::table('tabAthena Transactions')->groupBy('target_warehouse')->where('target_warehouse','LIKE', '%'.$request->q.'%')
-            ->where('target_warehouse', '!=', '')->selectRaw('target_warehouse as id, target_warehouse as text')->get();
-
-        $ERP_wh_users = DB::table('tabStock Entry Detail')->groupBy('session_user')->where('session_user','LIKE', '%'.$request->q.'%')
-            ->selectRaw('session_user as id, session_user as text')->get();
-
-        $ERP_wh = DB::table('tabStock Ledger Entry')->groupBy('warehouse')->where('warehouse','LIKE', '%'.$request->q.'%')
-            ->selectRaw('warehouse as id, warehouse as text')->get();
-
-        return response()->json([
-            'warehouses' => $warehouses,
-            'warehouse_users' => $Athena_wh_users,
-            'source_warehouse' => $Athena_src_wh,
-            'target_warehouse' => $Athena_to_wh,
-            'warehouse' => $ERP_wh,
-            'session_user' => $ERP_wh_users,
-            'item_groups' => $item_groups,
-            'item_class_filter' => $item_class_filter,
-            'item_classification' => $item_classification,
-            'brand' => $brand_filter
-        ]);
+                    return response()->json([
+                        'warehouses' => $list->warehouses,
+                        'warehouse_users' => $list->warehouse_users,
+                        'source_warehouse' => $list->source_warehouse,
+                        'target_warehouse' => $list->target_warehouse,
+                        'warehouse' => $list->warehouse,
+                        'session_user' => $list->session_user,
+                        'item_groups' => $list->item_groups,
+                        'item_class_filter' => $list->item_class_filter,
+                        'item_classification' => $list->item_classification,
+                        'brand' => $list->brand
+                    ]);
+                }
+            } catch (ConnectException $e) {
+                return [];
+            }
+        }
     }
 
     // public function get_actual_qty($item_code, $warehouse){

@@ -168,7 +168,8 @@ class ConsignmentController extends Controller
             ->whereBetween('csr.transaction_date', [$start, $end])->selectRaw('SUM(csri.qty) as sold_qty, csri.item_code')
             ->groupBy('csri.item_code')->pluck('sold_qty', 'csri.item_code')->toArray();
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         return view('consignment.inventory_audit_form', compact('branch', 'transaction_date', 'items', 'item_images', 'item_total_sold', 'duration', 'inventory_audit_from', 'inventory_audit_to', 'consigned_stocks'));
@@ -541,7 +542,8 @@ class ConsignmentController extends Controller
 
         $consigned_stocks = DB::table('tabBin')->whereIn('item_code', $item_codes)->where('warehouse', $branch)->pluck('consigned_qty', 'item_code')->toArray();
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_images = collect($item_images)->groupBy('parent')->toArray();
 
         $existing_record = DB::table('tabConsignment Sales Report as csr')->join('tabConsignment Sales Report Item as csri', 'csr.name', 'csri.parent')
@@ -1076,7 +1078,8 @@ class ConsignmentController extends Controller
 
         $item_codes = collect($inv_summary)->pluck('item_code');
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.promodiser_warehouse_items', compact('inv_summary', 'item_image', 'branch', 'assigned_consignment_stores'));
@@ -1177,7 +1180,8 @@ class ConsignmentController extends Controller
             return $q->branch_warehouse;
         })->unique();
 
-        $item_images = $this->getItemImages($item_codes, [], []);        
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();   
         $item_image = collect($item_images)->groupBy('parent');
 
         $uoms = DB::table('tabItem')->whereIn('item_code', $item_codes)->select('item_code', 'stock_uom')->get();
@@ -1632,7 +1636,8 @@ class ConsignmentController extends Controller
             ];
         }
 
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         $now = Carbon::now();
@@ -2154,7 +2159,8 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         return view('consignment.beginning_inv_items_list', compact('inventory', 'item_image', 'beginning_inventory'));
@@ -2210,11 +2216,8 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $item_images = [];
-        if ($athenaerp_api && count($items) > 0) {
-            $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
-        }
-
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         $items_arr = [];
@@ -2320,9 +2323,8 @@ class ConsignmentController extends Controller
                 return $q['item_code'];
             });
 
-            if ($athenaerp_api && $api_connected) {
-                $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
-            }
+            $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
 
             $item_images = collect($item_images)->groupBy('parent')->toArray();
 
@@ -2665,7 +2667,8 @@ class ConsignmentController extends Controller
             $item_codes = collect($item_codes)->merge($ste_item_codes);
         }
 
-        $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+            ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         $items_arr = [];
@@ -3090,7 +3093,8 @@ class ConsignmentController extends Controller
             return $q->item_code;
         });
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent');
 
         $default_images = DB::table('tabItem')->whereIn('item_code', $item_codes)->whereNotNull('item_image_path')->select('item_code', 'item_image_path as image_path')->get(); // in case there are no saved images in Item Images
@@ -3714,10 +3718,8 @@ class ConsignmentController extends Controller
             ];
         }
 
-        $item_images = [];
-        if ($athenaerp_api && $api_connected) {
-            $item_images = $this->getItemImages($item_codes, $athenaerp_api, $headers);
-        }
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
 
         $item_image = collect($item_images)->groupBy('parent');
 
@@ -4003,7 +4005,8 @@ class ConsignmentController extends Controller
 
         $inv_audit = collect($inv_audit)->groupBy('item_code')->toArray();
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent')->toArray();
 
         $result = [];
@@ -4313,7 +4316,8 @@ class ConsignmentController extends Controller
 
         $item_codes = collect($list)->pluck('item_code');
 
-        $item_images = $this->getItemImages($item_codes, [], []);
+        $item_images = DB::table('tabItem Images')->whereIn('parent', $item_codes)
+                ->select('parent', 'image_path')->orderBy('idx', 'asc')->get();
         $item_image = collect($item_images)->groupBy('parent')->toArray();
 
         $result = [];

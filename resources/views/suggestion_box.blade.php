@@ -1,5 +1,5 @@
 <div id="item-list" class="container-fluid p-0 ul_list" style="border: 1px solid #ccc;">
-  @forelse ($q as $item)
+  @forelse ($list as $item)
     @php
       $img = isset($image[$item->name]) ? "/img/" . $image[$item->name][0]->image_path : "/icon/no_img.png";
       $img_webp = isset($image[$item->name]) ? "/img/" . explode('.',$image[$item->name][0]->image_path)[0].'.webp' : "/icon/no_img.webp";
@@ -20,7 +20,7 @@
       </div>
       <div class="col-8 col-md-10 col-lg-9 col-xl-10 text-truncate">
         <span style="font-size: 10pt;"><b>{{ $item->name }}</b></span>
-        <br><span style="font-size: 10pt;">{{ $item->description }}</span>
+        <br><span style="font-size: 10pt;">{!! strip_tags($item->description) !!}</span>
       </div>
       <div class="col">
         <a class="btn btn-default" href="/get_item_details/{{ $item->name }}">

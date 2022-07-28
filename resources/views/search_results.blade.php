@@ -90,9 +90,10 @@
 															</div>
 															<div class="tree container"><!-- Item Group -->
 																<ul style="padding-left: 0 !important">
-																	@foreach (array_keys($item_groups) as $item)
+																	@foreach ($item_groups as $item)
 																		@php
-																			$lvl2 = isset($item_group_array[$item]['lvl2']) ? $item_group_array[$item]['lvl2'] : [];
+																			$lvl2 = isset($item_group_array[$item]) ? collect($item_group_array[$item])->toArray() : [];
+																			$lvl2 = isset($lvl2['lvl2']) ? $lvl2['lvl2'] : [];
 																		@endphp
 																		<li>
 																			<span class="w-100 {{ !$lvl2 ? 'p-2' : 'p-0' }}" style="border: none !important">
@@ -104,7 +105,7 @@
 																				</a>
 																			</span>
 																			@if ($lvl2)
-																				@include('search_results_item_group_tree', ['all' => $all, 'groups' => $lvl2, 'current_lvl' => 2, 'prev_obj' => $item])
+																				@include('search_results_item_group_tree', ['all' => $all, 'groups' => collect($lvl2)->toArray(), 'current_lvl' => 2, 'prev_obj' => $item])
 																			@endif
 																		</li>
 																	@endforeach
@@ -181,7 +182,7 @@
 										<div class="col-2 d-none {{ $item_groups ? 'd-xl-block' : null }}">
 											<div class="card mb-3 pt-0">
 												@php
-													$category = collect(array_keys($item_groups))->chunk(3);
+													$category = collect($item_groups)->chunk(3);
 												@endphp
 												<div class="tab-content">
 													@for($i = 0; $i < count($category); $i++)
@@ -190,7 +191,8 @@
 																<ul style="padding-left: 0 !important" >
 																	@foreach ($category[$i] as $item)
 																		@php
-																			$lvl2 = isset($item_group_array[$item]['lvl2']) ? $item_group_array[$item]['lvl2'] : [];
+																			$lvl2 = isset($item_group_array[$item]) ? collect($item_group_array[$item])->toArray() : [];
+																			$lvl2 = isset($lvl2['lvl2']) ? $lvl2['lvl2'] : [];
 																		@endphp
 																		<li class="{{ !$lvl2 ? 'p-2' : 'p-0' }}">
 																			<span class="p-0 w-75 tree-item" style="border: none !important">
@@ -202,7 +204,7 @@
 																				</a>
 																			</span>
 																			@if ($lvl2)
-																				@include('search_results_item_group_tree', ['all' => $all, 'groups' => $lvl2, 'current_lvl' => 2, 'prev_obj' => $item])
+																				@include('search_results_item_group_tree', ['all' => $all, 'groups' => collect($lvl2)->toArray(), 'current_lvl' => 2, 'prev_obj' => $item])
 																			@endif
 																		</li>
 																	@endforeach
@@ -230,6 +232,7 @@
 														<div class="row m-0">
 															<div class="col-1 p-1">
 																@php
+																	$row = collect($row)->toArray();
 																	$img = isset($row['item_image_paths'][0]) ? "/img/" . $row['item_image_paths'][0]->image_path : "/icon/no_img.png";
 																	$img_webp = isset($row['item_image_paths'][0]) ? "/img/" . explode('.',$row['item_image_paths'][0]->image_path)[0].'.webp' : "/icon/no_img.webp";
 																@endphp
@@ -260,7 +263,6 @@
 																					<div id="carouselExampleControls" class="carousel slide" data-interval="false">
 																						<div class="carousel-inner">
 																							<div class="carousel-item active">
-																								{{-- <img class="d-block w-100" id="{{ $row['name'] }}-image" src="{{ asset('storage/').$img_webp }}" alt="{{ Illuminate\Support\Str::slug(explode('.', $img_webp)[0], '-') }}"> --}}
 																								<picture>
 																									<source id="{{ $row['name'] }}-webp-image-src" srcset="{{ asset('storage/').$img_webp }}" type="image/webp" class="d-block w-100" style="width: 100% !important;">
 																									<source id="{{ $row['name'] }}-orig-image-src" srcset="{{ asset('storage/').$img }}" type="image/jpeg" class="d-block w-100" style="width: 100% !important;">
@@ -287,7 +289,6 @@
 																<div class="text-center mt-2 mb-1">
 																	<div class="d-flex flex-row">
 																		<div class="p-1 col-6">
-																			{{-- <a href="#" class="view-item-details" data-item-code="{{ $row['name'] }}" data-item-classification="{{ $row['item_classification'] }}"> --}}
 																			<a href="/get_item_details/{{ $row['name'] }}">
 																				<div class="btn btn-primary btn-xs btn-block">
 																					<i class="fa fa-search"></i> <span class="d-inline d-md-none" style="font-size: 10pt">View Item Details</span>
@@ -337,6 +338,9 @@
 																			</tr>
 																		</thead>
 																		@foreach($row['item_inventory'] as $inv)
+																			@php
+																				$inv = collect($inv)->toArray();
+																			@endphp
 																			<tr>
 																				<td class="text-center" >
 																					{{ $inv['warehouse'] }}
@@ -391,6 +395,9 @@
 																							<th class="consignment-th text-center">In Store</th>
 																						</tr>
 																						@forelse($row['consignment_warehouses'] as $con)
+																						@php
+																							$con = collect($con)->toArray();
+																						@endphp
 																						<tr>
 																							<td class="consignment-name">
 																								{{ $con['warehouse'] }}
@@ -519,6 +526,9 @@
 																				</tr>
 																			</thead>
 																			@foreach($row['item_inventory'] as $inv)
+																			@php
+																				$inv = collect($inv)->toArray();
+																			@endphp
 																				<tr>
 																					<td class="text-center" >
 																						{{ $inv['warehouse'] }}
@@ -574,6 +584,9 @@
 																								<th class="consignment-th text-center">In Store</th>
 																							</tr>
 																							@forelse($row['consignment_warehouses'] as $con)
+																							@php
+																								$con = collect($con)->toArray();
+																							@endphp
 																							<tr>
 																								<td class="consignment-name">
 																									{{ $con['warehouse'] }}
@@ -618,6 +631,9 @@
 																			</tr>
 																		</thead>
 																		@foreach($row['item_inventory'] as $inv)
+																		@php
+																			$inv = collect($inv)->toArray();
+																		@endphp
 																			<tr>
 																				<td class="text-center" >
 																					{{ $inv['warehouse'] }}
@@ -678,6 +694,9 @@
 																							<th class="consignment-th text-center">In Store</th>
 																						</tr>
 																						@forelse($row['consignment_warehouses'] as $con)
+																						@php
+																							$con = collect($con)->toArray();
+																						@endphp
 																						<tr>
 																							<td class="consignment-name">
 																								{{ $con['warehouse'] }}
@@ -718,13 +737,50 @@
 											</div><!-- new table -->
 				
 											<div class="mt-3 ml-3 clearfix pagination" style="display: block;">
-												<div class="col-md-4 float-right">
-													{{ $items->links() }}
-												</div>
+												@if(isset($total_records) && $total_records > 0)
+												@php
+													$ends_count = 2;  //how many items at the ends (before and after [...])
+													$middle_count = 2;  //how many items before and after current page
+													$dots = false;
+													$prev = $current_page - 1;
+												@endphp
+												<ul class="pagination">
+													<li class="page-item {{ (1 < $current_page) ? '' : 'disabled' }}">
+													<a href="{!! request()->fullUrlWithQuery(['page' => $prev]) !!}" class="page-link">Previous</a>
+													</li>
+													@for ($i = 1; $i <= $numOfPages; $i++) 
+													@if ($i == $current_page)
+													<li class="page-item active">
+														<span class="page-link">{{ $i }}</span>
+													</li>
+													@php
+														$dots = true;
+													@endphp
+													@else
+														@if ($i <= $ends_count || ($current_page && $i >= $current_page - $middle_count && $i <= $current_page + $middle_count) || $i > $numOfPages - $ends_count) 
+														{{-- <li class="page-item"><a class="page-link" href="{{ \Request::url() .'?page='.$i }}">{{ $i }}</a></li> --}}
+														<li class="page-item"><a class="page-link" href="{!! request()->fullUrlWithQuery(['page' => $i]) !!}">{{ $i }}</a></li>
+														@php
+															$dots = true;
+														@endphp
+														@elseif ($dots)
+														<li class="page-item disabled">
+															<a class="page-link" href="#">&hellip;</a>
+														</li>
+														@php
+														$dots = false;
+														@endphp
+														@endif
+													@endif
+													@endfor
+													<li class="page-item {{ ($current_page < $numOfPages || -1 == $numOfPages) ? '' : 'disabled' }}">
+														<a class="page-link" href="{!! request()->fullUrlWithQuery(['page' => $next_page]) !!}">Next</a>
+													</li>
+												</ul>
+												@endif
 											</div>
 										</div>
 									</div>
-									
 								</div><!-- Card End -->
 							</div>
 						</div>
