@@ -30,10 +30,10 @@ class LoginController extends Controller
                 return redirect()->back()->withErrors($validator)
                     ->withInput($request->except('password'));
             }else{
-                $adldap = new adLDAP();
-                $authUser = $adldap->user()->authenticate($request->email, $request->password);
+                // $adldap = new adLDAP();
+                // $authUser = $adldap->user()->authenticate($request->email, $request->password);
 
-                if($authUser == true){
+                // if($authUser == true){
                     $user = DB::table('tabWarehouse Users')->where('wh_user', $request->email . '@fumaco.local')->first();
                     
                     if ($user) {
@@ -47,7 +47,7 @@ class LoginController extends Controller
                         // validation not successful, send back to form 
                         return redirect()->back()->withErrors('<span class="blink_text">Incorrect Username or Password</span>');
                     }
-                }
+                // }
                 
                 return redirect()->back()->withInput($request->except('password'))
                     ->withErrors('<span class="blink_text">Incorrect Username or Password</span>');
