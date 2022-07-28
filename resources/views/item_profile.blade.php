@@ -254,6 +254,9 @@
                                                                 </tr>
                                                             </thead>
                                                             @forelse ($site_warehouses as $stock)
+                                                            @php
+                                                                $stock = collect($stock)->toArray();
+                                                            @endphp
                                                             <tr>
                                                                 <td class="p-1 font-responsive">
                                                                     {{ $stock['warehouse'] }}
@@ -367,7 +370,7 @@
                                 </div>
                             </div>
                             @endif
-                            @if (count($co_variants) > 0)
+                            @if (collect($co_variants)->count() > 0)
                             <div class="col-12">
                                 <div class="card-header border-bottom-0">
                                     <h3 class="card-title font-responsive mt-5"><i class="fas fa-project-diagram"></i> Variants</h3>
@@ -473,7 +476,8 @@
                                                         @php
                                                             $attr_val = null;
                                                             if (array_key_exists($variant->name, $attributes)) {
-                                                                $attr_val = array_key_exists($attribute_name, $attributes[$variant->name]) ? $attributes[$variant->name][$attribute_name] : null;
+                                                                $attributes_variant_name = collect($attributes[$variant->name])->toArray();
+                                                                $attr_val = array_key_exists($attribute_name, $attributes_variant_name) ? $attributes_variant_name[$attribute_name] : null;
                                                             }
                                                         @endphp
                                                         <td class="text-center align-middle p-2">{{ $attr_val }}</td>
@@ -572,7 +576,46 @@
                                     </div>
                                 </div>
                                 <div class="m-2">
-                                    {{ $co_variants->links() }}
+                                    @if(isset($total_records) && $total_records > 0)
+                                    @php
+                                        $ends_count = 2;  //how many items at the ends (before and after [...])
+                                        $middle_count = 2;  //how many items before and after current page
+                                        $dots = false;
+                                        $prev = $current_page - 1;
+                                    @endphp
+                                    <ul class="pagination">
+                                        <li class="page-item {{ (1 < $current_page) ? '' : 'disabled' }}">
+                                        <a href="{!! request()->fullUrlWithQuery(['page' => $prev]) !!}" class="page-link">Previous</a>
+                                        </li>
+                                        @for ($i = 1; $i <= $numOfPages; $i++) 
+                                        @if ($i == $current_page)
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ $i }}</span>
+                                        </li>
+                                        @php
+                                            $dots = true;
+                                        @endphp
+                                        @else
+                                            @if ($i <= $ends_count || ($current_page && $i >= $current_page - $middle_count && $i <= $current_page + $middle_count) || $i > $numOfPages - $ends_count) 
+                                            <li class="page-item"><a class="page-link" href="{!! request()->fullUrlWithQuery(['page' => $i]) !!}">{{ $i }}</a></li>
+                                            @php
+                                                $dots = true;
+                                            @endphp
+                                            @elseif ($dots)
+                                            <li class="page-item disabled">
+                                                <a class="page-link" href="#">&hellip;</a>
+                                            </li>
+                                            @php
+                                            $dots = false;
+                                            @endphp
+                                            @endif
+                                        @endif
+                                        @endfor
+                                        <li class="page-item {{ ($current_page < $numOfPages || -1 == $numOfPages) ? '' : 'disabled' }}">
+                                            <a class="page-link" href="{!! request()->fullUrlWithQuery(['page' => $next_page]) !!}">Next</a>
+                                        </li>
+                                    </ul>
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-12">
@@ -581,6 +624,9 @@
                                 </div>
                                 <div class="d-flex flex-row flex-nowrap overflow-auto">
                                     @forelse($item_alternatives as $a)
+                                    @php
+                                        $a = collect($a)->toArray();
+                                    @endphp
                                     <div class="custom-body m-1">
                                         <div class="card card-default">
                                             <div class="card-body p-0">

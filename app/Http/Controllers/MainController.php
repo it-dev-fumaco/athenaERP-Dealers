@@ -2772,461 +2772,580 @@ class MainController extends Controller
     // }
 
     public function get_item_details(Request $request, $item_code){
-        $item_details = DB::table('tabItem')->where('name', $item_code)->first();
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        $api_connected = true;
+        $list = [];
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-        if(!$item_details){
-            abort(404);
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_item_profile_details/' . $item_code, [
+                    'query' => [
+                        'frappe_userid' => Auth::user()->frappe_userid,
+                        'user_group' => Auth::user()->user_group,
+                        'name' => Auth::user()->name,
+                        'department' => Auth::user()->department,
+                        'page' => $request->page,
+                    ],
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = (array) json_decode((string) $res->getBody());
+                    
+                    $list = $res['data'];
+
+                    $is_tax_included_in_rate = $list->is_tax_included_in_rate;
+                    $item_details = $list->item_details;
+                    $item_attributes = collect($list->item_attributes)->toArray();
+                    $site_warehouses = $list->site_warehouses;
+                    $item_images = $list->item_images;
+                    $item_alternatives = collect($list->item_alternatives)->toArray();
+                    $consignment_warehouses = $list->consignment_warehouses;
+                    $user_group = $list->user_group;
+                    $minimum_selling_price = $list->minimum_selling_price;
+                    $default_price = $list->default_price;
+                    $attribute_names = collect($list->attribute_names)->toArray();
+                    $co_variants = $list->co_variants;
+                    $numOfPages = $co_variants->last_page;
+                    $current_page = $co_variants->current_page;
+                    $has_next_page = $co_variants->next_page_url;
+                    $has_previous_page = $co_variants->prev_page_url;
+                    $next_page = $current_page + 1;
+                    $total_records = $co_variants->total;
+                    $co_variants = $co_variants->data;
+                    $attributes = collect($list->attributes)->toArray();
+                    $variants_price_arr = collect($list->variants_price_arr)->toArray();
+                    $item_rate = $list->item_rate;
+                    $last_purchase_date = $list->last_purchase_date;
+                    $allowed_department = $list->allowed_department;
+                    $user_department = $list->user_department;
+                    $avgPurchaseRate = $list->avgPurchaseRate;
+                    $last_purchase_rate = $list->last_purchase_rate;
+                    $variants_cost_arr = $list->variants_cost_arr;
+                    $variants_min_price_arr = $list->variants_min_price_arr;
+                    $actual_variant_stocks = collect($list->actual_variant_stocks)->toArray();
+                    $item_stock_available = $list->item_stock_available;
+                    $manual_rate = $list->manual_rate;
+                    $manual_price_input = $list->manual_price_input;
+
+                    return view('item_profile', compact('is_tax_included_in_rate', 'item_details', 'item_attributes', 'site_warehouses', 'item_images', 'item_alternatives', 'consignment_warehouses', 'user_group', 'minimum_selling_price', 'default_price', 'attribute_names', 'co_variants', 'attributes', 'variants_price_arr', 'item_rate', 'last_purchase_date', 'allowed_department', 'user_department', 'avgPurchaseRate', 'last_purchase_rate', 'variants_cost_arr', 'variants_min_price_arr', 'actual_variant_stocks', 'item_stock_available', 'manual_rate', 'manual_price_input', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
+                }
+            } catch (ConnectException $e) {
+                $list = [];
+                $api_connected = false;
+            }
         }
 
-        if($request->json){
-            return response()->json($item_details);
-        }
+        // $item_details = DB::table('tabItem')->where('name', $item_code)->first();
 
-        $allow_warehouse = [];
-        $is_promodiser = Auth::user()->user_group == 'Promodiser' ? 1 : 0;
-        if ($is_promodiser) {
-            $allowed_parent_warehouse_for_promodiser = DB::table('tabWarehouse Access as wa')
-                ->join('tabWarehouse as w', 'wa.warehouse', 'w.parent_warehouse')
-                ->where('wa.parent', Auth::user()->name)->where('w.is_group', 0)
-                ->where('w.stock_warehouse', 1)
-                ->pluck('w.name')->toArray();
+        // if(!$item_details){
+        //     abort(404);
+        // }
 
-            $allowed_warehouse_for_promodiser = DB::table('tabWarehouse Access as wa')
-                ->join('tabWarehouse as w', 'wa.warehouse', 'w.name')
-                ->where('wa.parent', Auth::user()->name)->where('w.is_group', 0)
-                ->where('w.stock_warehouse', 1)
-                ->pluck('w.name')->toArray();
+        // if($request->json){
+        //     return response()->json($item_details);
+        // }
 
-            $consignment_stores = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse')->toArray();
+        // $allow_warehouse = [];
+        // $is_promodiser = Auth::user()->user_group == 'Promodiser' ? 1 : 0;
+        // if ($is_promodiser) {
+        //     $allowed_parent_warehouse_for_promodiser = DB::table('tabWarehouse Access as wa')
+        //         ->join('tabWarehouse as w', 'wa.warehouse', 'w.parent_warehouse')
+        //         ->where('wa.parent', Auth::user()->name)->where('w.is_group', 0)
+        //         ->where('w.stock_warehouse', 1)
+        //         ->pluck('w.name')->toArray();
 
-            $allow_warehouse = array_merge($allowed_parent_warehouse_for_promodiser, $allowed_warehouse_for_promodiser);
-            $allow_warehouse = array_merge($allow_warehouse, $consignment_stores);
-        }
+        //     $allowed_warehouse_for_promodiser = DB::table('tabWarehouse Access as wa')
+        //         ->join('tabWarehouse as w', 'wa.warehouse', 'w.name')
+        //         ->where('wa.parent', Auth::user()->name)->where('w.is_group', 0)
+        //         ->where('w.stock_warehouse', 1)
+        //         ->pluck('w.name')->toArray();
 
-        $user_department = Auth::user()->department;
-        $user_group = Auth::user()->user_group;
-        // get departments allowed to view prices
-        $allowed_department = DB::table('tabDeparment with Price Access')->pluck('department')->toArray();
+        //     $consignment_stores = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse')->toArray();
 
-        $item_rate = 0;
-        $last_purchase_date = null;
-        $website_price = [];
-        $minimum_selling_price = 0;
-        $default_price = 0;
-        $avgPurchaseRate = '₱ 0.00';
-        $last_purchase_rate = 0;
-        $manual_rate = 0;
-        $is_tax_included_in_rate = 0;
-        if (in_array($user_department, $allowed_department) || in_array($user_group, ['Manager', 'Director'])) {
-            $avgPurchaseRate = $this->avgPurchaseRate($item_code);
-            $last_purchase_order = DB::table('tabPurchase Order as po')->join('tabPurchase Order Item as poi', 'po.name', 'poi.parent')
-                ->where('po.docstatus', 1)->where('poi.item_code', $item_code)->select('poi.base_rate', 'po.supplier_group', 'po.creation')->orderBy('po.creation', 'desc')->first();
+        //     $allow_warehouse = array_merge($allowed_parent_warehouse_for_promodiser, $allowed_warehouse_for_promodiser);
+        //     $allow_warehouse = array_merge($allow_warehouse, $consignment_stores);
+        // }
 
-            if ($last_purchase_order) {
-                $last_purchase_date = Carbon::parse($last_purchase_order->creation)->format('M. d, Y h:i:A');
-                if ($last_purchase_order->supplier_group == 'Imported') {
-                    $last_landed_cost_voucher = DB::table('tabLanded Cost Voucher as a')
-                        ->join('tabLanded Cost Item as b', 'a.name', 'b.parent')
-                        ->where('a.docstatus', 1)->where('b.item_code', $item_code)
-                        ->select('a.creation', 'a.name as purchase_order', 'b.item_code', 'b.valuation_rate', DB::raw('ifnull(a.posting_date, a.creation) as transaction_date'), 'a.posting_date')
-                        ->orderBy('transaction_date', 'desc')
-                        ->first();
+        // $user_department = Auth::user()->department;
+        // $user_group = Auth::user()->user_group;
+        // // get departments allowed to view prices
+        // $allowed_department = DB::table('tabDeparment with Price Access')->pluck('department')->toArray();
+
+        // $item_rate = 0;
+        // $last_purchase_date = null;
+        // $website_price = [];
+        // $minimum_selling_price = 0;
+        // $default_price = 0;
+        // $avgPurchaseRate = '₱ 0.00';
+        // $last_purchase_rate = 0;
+        // $manual_rate = 0;
+        // $is_tax_included_in_rate = 0;
+        // if (in_array($user_department, $allowed_department) || in_array($user_group, ['Manager', 'Director'])) {
+        //     $avgPurchaseRate = $this->avgPurchaseRate($item_code);
+        //     $last_purchase_order = DB::table('tabPurchase Order as po')->join('tabPurchase Order Item as poi', 'po.name', 'poi.parent')
+        //         ->where('po.docstatus', 1)->where('poi.item_code', $item_code)->select('poi.base_rate', 'po.supplier_group', 'po.creation')->orderBy('po.creation', 'desc')->first();
+
+        //     if ($last_purchase_order) {
+        //         $last_purchase_date = Carbon::parse($last_purchase_order->creation)->format('M. d, Y h:i:A');
+        //         if ($last_purchase_order->supplier_group == 'Imported') {
+        //             $last_landed_cost_voucher = DB::table('tabLanded Cost Voucher as a')
+        //                 ->join('tabLanded Cost Item as b', 'a.name', 'b.parent')
+        //                 ->where('a.docstatus', 1)->where('b.item_code', $item_code)
+        //                 ->select('a.creation', 'a.name as purchase_order', 'b.item_code', 'b.valuation_rate', DB::raw('ifnull(a.posting_date, a.creation) as transaction_date'), 'a.posting_date')
+        //                 ->orderBy('transaction_date', 'desc')
+        //                 ->first();
     
-                    if ($last_landed_cost_voucher) {
-                        $item_rate = $last_landed_cost_voucher->valuation_rate;
-                    }
-                } else {
-                    $item_rate = $last_purchase_order->base_rate;
-                }
-            }
+        //             if ($last_landed_cost_voucher) {
+        //                 $item_rate = $last_landed_cost_voucher->valuation_rate;
+        //             }
+        //         } else {
+        //             $item_rate = $last_purchase_order->base_rate;
+        //         }
+        //     }
 
-            $price_settings = DB::table('tabSingles')->where('doctype', 'Price Settings')
-                ->whereIn('field', ['minimum_price_computation', 'standard_price_computation', 'is_tax_included_in_rate'])->pluck('value', 'field')->toArray();
+        //     $price_settings = DB::table('tabSingles')->where('doctype', 'Price Settings')
+        //         ->whereIn('field', ['minimum_price_computation', 'standard_price_computation', 'is_tax_included_in_rate'])->pluck('value', 'field')->toArray();
 
-            $minimum_price_computation = array_key_exists('minimum_price_computation', $price_settings) ? $price_settings['minimum_price_computation'] : 0;
-            $standard_price_computation = array_key_exists('standard_price_computation', $price_settings) ? $price_settings['standard_price_computation'] : 0;
-            $is_tax_included_in_rate = array_key_exists('is_tax_included_in_rate', $price_settings) ? $price_settings['is_tax_included_in_rate'] : 0;
+        //     $minimum_price_computation = array_key_exists('minimum_price_computation', $price_settings) ? $price_settings['minimum_price_computation'] : 0;
+        //     $standard_price_computation = array_key_exists('standard_price_computation', $price_settings) ? $price_settings['standard_price_computation'] : 0;
+        //     $is_tax_included_in_rate = array_key_exists('is_tax_included_in_rate', $price_settings) ? $price_settings['is_tax_included_in_rate'] : 0;
 
-            $last_purchase_rate = $item_rate;
+        //     $last_purchase_rate = $item_rate;
 
-            if ($item_rate <= 0) {
-                $manual_rate = 1;
-                $item_rate = $item_details->custom_item_cost;
-            }
+        //     if ($item_rate <= 0) {
+        //         $manual_rate = 1;
+        //         $item_rate = $item_details->custom_item_cost;
+        //     }
 
-            $minimum_selling_price = $item_rate * $minimum_price_computation;
-            $default_price = $item_rate * $standard_price_computation;
+        //     $minimum_selling_price = $item_rate * $minimum_price_computation;
+        //     $default_price = $item_rate * $standard_price_computation;
 
-            if($is_tax_included_in_rate) {
-                $default_price = ($item_rate * $standard_price_computation) * 1.12;
-            }
+        //     if($is_tax_included_in_rate) {
+        //         $default_price = ($item_rate * $standard_price_computation) * 1.12;
+        //     }
 
-            $website_price = DB::table('tabItem Price')
-                ->where('price_list', 'Website Price List')->where('selling', 1)
-                ->where('item_code', $item_code)->orderBy('modified', 'desc')
-                ->select('price_list_rate', 'price_list')->first();
+        //     $website_price = DB::table('tabItem Price')
+        //         ->where('price_list', 'Website Price List')->where('selling', 1)
+        //         ->where('item_code', $item_code)->orderBy('modified', 'desc')
+        //         ->select('price_list_rate', 'price_list')->first();
 
-            $default_price = ($website_price) ? $website_price->price_list_rate : $default_price;
-        }
+        //     $default_price = ($website_price) ? $website_price->price_list_rate : $default_price;
+        // }
 
-        // get item inventory stock list
-        $item_inventory = DB::table('tabBin')->join('tabWarehouse', 'tabBin.warehouse', 'tabWarehouse.name')->where('item_code', $item_code)
-            ->when($is_promodiser, function($q) use ($allow_warehouse) {
-                return $q->whereIn('warehouse', $allow_warehouse);
-            })
-            ->where('stock_warehouse', 1)->where('tabWarehouse.disabled', 0)
-            ->select('item_code', 'warehouse', 'location', 'actual_qty', 'consigned_qty', 'stock_uom', 'parent_warehouse')
-            ->get()->toArray();
+        // // get item inventory stock list
+        // $item_inventory = DB::table('tabBin')->join('tabWarehouse', 'tabBin.warehouse', 'tabWarehouse.name')->where('item_code', $item_code)
+        //     ->when($is_promodiser, function($q) use ($allow_warehouse) {
+        //         return $q->whereIn('warehouse', $allow_warehouse);
+        //     })
+        //     ->where('stock_warehouse', 1)->where('tabWarehouse.disabled', 0)
+        //     ->select('item_code', 'warehouse', 'location', 'actual_qty', 'consigned_qty', 'stock_uom', 'parent_warehouse')
+        //     ->get()->toArray();
 
-        $stock_warehouses = array_column($item_inventory, 'warehouse');
+        // $stock_warehouses = array_column($item_inventory, 'warehouse');
 
-        $stock_reserves = [];
-        if (count($stock_warehouses) > 0) {
-            $stock_reserves = StockReservation::where('item_code', $item_code)
-                ->whereIn('warehouse', $stock_warehouses)->whereIn('status', ['Active', 'Partially Issued'])
-                ->selectRaw('SUM(reserve_qty) as reserved_qty, SUM(consumed_qty) as consumed_qty, warehouse')
-                ->groupBy('warehouse')->get();
+        // $stock_reserves = [];
+        // if (count($stock_warehouses) > 0) {
+        //     $stock_reserves = StockReservation::where('item_code', $item_code)
+        //         ->whereIn('warehouse', $stock_warehouses)->whereIn('status', ['Active', 'Partially Issued'])
+        //         ->selectRaw('SUM(reserve_qty) as reserved_qty, SUM(consumed_qty) as consumed_qty, warehouse')
+        //         ->groupBy('warehouse')->get();
 
-            $stock_reserves = collect($stock_reserves)->groupBy('warehouse')->toArray();
+        //     $stock_reserves = collect($stock_reserves)->groupBy('warehouse')->toArray();
 
-            $ste_issued = DB::table('tabStock Entry Detail')->where('docstatus', 0)->where('status', 'Issued')
-                ->where('item_code', $item_code)->whereIn('s_warehouse', $stock_warehouses)
-                ->selectRaw('SUM(qty) as qty, s_warehouse')->groupBy('s_warehouse')
-                ->pluck('qty', 's_warehouse')->toArray();
+        //     $ste_issued = DB::table('tabStock Entry Detail')->where('docstatus', 0)->where('status', 'Issued')
+        //         ->where('item_code', $item_code)->whereIn('s_warehouse', $stock_warehouses)
+        //         ->selectRaw('SUM(qty) as qty, s_warehouse')->groupBy('s_warehouse')
+        //         ->pluck('qty', 's_warehouse')->toArray();
 
-            $at_issued = DB::table('tabAthena Transactions as at')
-                ->join('tabPacking Slip as ps', 'ps.name', 'at.reference_parent')
-                ->join('tabPacking Slip Item as psi', 'ps.name', 'psi.parent')
-                ->join('tabDelivery Note as dr', 'ps.delivery_note', 'dr.name')
-                ->whereIn('at.reference_type', ['Packing Slip', 'Picking Slip'])
-                ->where('dr.docstatus', 0)->where('ps.docstatus', '<', 2)
-                ->where('psi.status', 'Issued')->where('at.item_code', $item_code)
-                ->where('psi.item_code', $item_code)->whereIn('at.source_warehouse', $stock_warehouses)
-                ->selectRaw('SUM(at.issued_qty) as qty, at.source_warehouse')->groupBy('at.source_warehouse')
-                ->pluck('qty', 'source_warehouse')->toArray();
-        }
+        //     $at_issued = DB::table('tabAthena Transactions as at')
+        //         ->join('tabPacking Slip as ps', 'ps.name', 'at.reference_parent')
+        //         ->join('tabPacking Slip Item as psi', 'ps.name', 'psi.parent')
+        //         ->join('tabDelivery Note as dr', 'ps.delivery_note', 'dr.name')
+        //         ->whereIn('at.reference_type', ['Packing Slip', 'Picking Slip'])
+        //         ->where('dr.docstatus', 0)->where('ps.docstatus', '<', 2)
+        //         ->where('psi.status', 'Issued')->where('at.item_code', $item_code)
+        //         ->where('psi.item_code', $item_code)->whereIn('at.source_warehouse', $stock_warehouses)
+        //         ->selectRaw('SUM(at.issued_qty) as qty, at.source_warehouse')->groupBy('at.source_warehouse')
+        //         ->pluck('qty', 'source_warehouse')->toArray();
+        // }
 
-        $site_warehouses = [];
-        $consignment_warehouses = [];
-        foreach ($item_inventory as $value) {
-            $reserved_qty = array_key_exists($value->warehouse, $stock_reserves) ? $stock_reserves[$value->warehouse][0]['reserved_qty'] : 0;
-            $consumed_qty = array_key_exists($value->warehouse, $stock_reserves) ? $stock_reserves[$value->warehouse][0]['consumed_qty'] : 0;
-            $ste_issued_qty = array_key_exists($value->warehouse, $ste_issued) ? $ste_issued[$value->warehouse] : 0;
-            $at_issued_qty = array_key_exists($value->warehouse, $at_issued) ? $at_issued[$value->warehouse] : 0;
+        // $site_warehouses = [];
+        // $consignment_warehouses = [];
+        // foreach ($item_inventory as $value) {
+        //     $reserved_qty = array_key_exists($value->warehouse, $stock_reserves) ? $stock_reserves[$value->warehouse][0]['reserved_qty'] : 0;
+        //     $consumed_qty = array_key_exists($value->warehouse, $stock_reserves) ? $stock_reserves[$value->warehouse][0]['consumed_qty'] : 0;
+        //     $ste_issued_qty = array_key_exists($value->warehouse, $ste_issued) ? $ste_issued[$value->warehouse] : 0;
+        //     $at_issued_qty = array_key_exists($value->warehouse, $at_issued) ? $at_issued[$value->warehouse] : 0;
 
-            $issued_qty = $ste_issued_qty + $at_issued_qty;
-            $reserved_qty = $reserved_qty - $consumed_qty;
+        //     $issued_qty = $ste_issued_qty + $at_issued_qty;
+        //     $reserved_qty = $reserved_qty - $consumed_qty;
 
-            $actual_qty = $value->actual_qty - $issued_qty;
-            $available_qty = ($actual_qty > $reserved_qty) ? $actual_qty - $reserved_qty : 0;
-            if($value->parent_warehouse == "P2 Consignment Warehouse - FI" && !$is_promodiser) {
-                $consignment_warehouses[] = [
-                    'warehouse' => $value->warehouse,
-                    'location' => $value->location,
-                    'reserved_qty' => $reserved_qty,
-                    'actual_qty' => $value->actual_qty,
-                    'available_qty' => $available_qty,
-                    'stock_uom' => $value->stock_uom,
-                ];
-            }else{
-                if(Auth::user()->user_group == 'Promodiser' && $value->parent_warehouse == "P2 Consignment Warehouse - FI"){
-                    $available_qty = $value->consigned_qty > 0 ? $value->consigned_qty : 0;
-                }
+        //     $actual_qty = $value->actual_qty - $issued_qty;
+        //     $available_qty = ($actual_qty > $reserved_qty) ? $actual_qty - $reserved_qty : 0;
+        //     if($value->parent_warehouse == "P2 Consignment Warehouse - FI" && !$is_promodiser) {
+        //         $consignment_warehouses[] = [
+        //             'warehouse' => $value->warehouse,
+        //             'location' => $value->location,
+        //             'reserved_qty' => $reserved_qty,
+        //             'actual_qty' => $value->actual_qty,
+        //             'available_qty' => $available_qty,
+        //             'stock_uom' => $value->stock_uom,
+        //         ];
+        //     }else{
+        //         if(Auth::user()->user_group == 'Promodiser' && $value->parent_warehouse == "P2 Consignment Warehouse - FI"){
+        //             $available_qty = $value->consigned_qty > 0 ? $value->consigned_qty : 0;
+        //         }
 
-                $site_warehouses[] = [
-                    'warehouse' => $value->warehouse,
-                    'location' => $value->location,
-                    'reserved_qty' => $reserved_qty,
-                    'actual_qty' => $value->actual_qty,
-                    'available_qty' => $available_qty,
-                    'stock_uom' => $value->stock_uom,
-                ];
-            }
-        }
+        //         $site_warehouses[] = [
+        //             'warehouse' => $value->warehouse,
+        //             'location' => $value->location,
+        //             'reserved_qty' => $reserved_qty,
+        //             'actual_qty' => $value->actual_qty,
+        //             'available_qty' => $available_qty,
+        //             'stock_uom' => $value->stock_uom,
+        //         ];
+        //     }
+        // }
 
-        $item_stock_available = collect($consignment_warehouses)->sum('available_qty');
-        if($item_stock_available <= 0) {
-            $item_stock_available = collect($site_warehouses)->sum('available_qty');
-        }
+        // $item_stock_available = collect($consignment_warehouses)->sum('available_qty');
+        // if($item_stock_available <= 0) {
+        //     $item_stock_available = collect($site_warehouses)->sum('available_qty');
+        // }
 
-        // get item images
-        $item_images = DB::table('tabItem Images')->where('parent', $item_code)->orderBy('idx', 'asc')->pluck('image_path')->toArray();
-        // get item alternatives from production order item table in erp
-        $item_alternatives = [];
-        $production_item_alternatives = DB::table('tabWork Order Item as p')->join('tabItem as i', 'p.item_alternative_for', 'i.name')
-            ->where('p.item_code', $item_details->name)->where('p.item_alternative_for', '!=', $item_details->name)->where('i.stock_uom', $item_details->stock_uom)
-            ->select('i.item_code', 'i.description')->orderBy('p.modified', 'desc')->get()->toArray();
+        // // get item images
+        // $item_images = DB::table('tabItem Images')->where('parent', $item_code)->orderBy('idx', 'asc')->pluck('image_path')->toArray();
+        // // get item alternatives from production order item table in erp
+        // $item_alternatives = [];
+        // $production_item_alternatives = DB::table('tabWork Order Item as p')->join('tabItem as i', 'p.item_alternative_for', 'i.name')
+        //     ->where('p.item_code', $item_details->name)->where('p.item_alternative_for', '!=', $item_details->name)->where('i.stock_uom', $item_details->stock_uom)
+        //     ->select('i.item_code', 'i.description')->orderBy('p.modified', 'desc')->get()->toArray();
 
-        $production_item_alternative_item_codes = array_column($production_item_alternatives, 'item_code');
-        $item_alternative_images = DB::table('tabItem Images')->whereIn('parent', $production_item_alternative_item_codes)->orderBy('idx', 'asc')->pluck('image_path')->toArray();
-        $production_item_alt_actual_stock = DB::table('tabBin')->whereIn('item_code', $production_item_alternative_item_codes)->selectRaw('SUM(actual_qty) as actual_qty, item_code')
-            ->groupBy('item_code')->pluck('actual_qty', 'item_code')->toArray();
-        foreach($production_item_alternatives as $a){
-            $item_alternative_image = array_key_exists($a->item_code, $item_alternative_images) ? $item_alternative_images[$a->item_code] : null;
-            $actual_stocks = array_key_exists($a->item_code, $production_item_alt_actual_stock) ? $production_item_alt_actual_stock[$a->item_code] : 0;
+        // $production_item_alternative_item_codes = array_column($production_item_alternatives, 'item_code');
+        // $item_alternative_images = DB::table('tabItem Images')->whereIn('parent', $production_item_alternative_item_codes)->orderBy('idx', 'asc')->pluck('image_path')->toArray();
+        // $production_item_alt_actual_stock = DB::table('tabBin')->whereIn('item_code', $production_item_alternative_item_codes)->selectRaw('SUM(actual_qty) as actual_qty, item_code')
+        //     ->groupBy('item_code')->pluck('actual_qty', 'item_code')->toArray();
+        // foreach($production_item_alternatives as $a){
+        //     $item_alternative_image = array_key_exists($a->item_code, $item_alternative_images) ? $item_alternative_images[$a->item_code] : null;
+        //     $actual_stocks = array_key_exists($a->item_code, $production_item_alt_actual_stock) ? $production_item_alt_actual_stock[$a->item_code] : 0;
 
-            if(count($item_alternatives) < 7){
-                $item_alternatives[] = [
-                    'item_code' => $a->item_code,
-                    'description' => $a->description,
-                    'item_alternative_image' => $item_alternative_image,
-                    'actual_stocks' => $actual_stocks
-                ];
-            }
-        }
+        //     if(count($item_alternatives) < 7){
+        //         $item_alternatives[] = [
+        //             'item_code' => $a->item_code,
+        //             'description' => $a->description,
+        //             'item_alternative_image' => $item_alternative_image,
+        //             'actual_stocks' => $actual_stocks
+        //         ];
+        //     }
+        // }
 
-        $item_attributes = DB::table('tabItem Variant Attribute')->where('parent', $item_code)->orderBy('idx', 'asc')->pluck('attribute_value', 'attribute')->toArray();
-        // get item alternatives based on parent item code
-        $q = DB::table('tabItem')->where('variant_of', $item_details->variant_of)->where('name', '!=', $item_details->name)->orderBy('modified', 'desc')->get();
-        $alternative_item_codes = collect($q)->map(function($q){
-            return $q->name;
-        });
+        // $item_attributes = DB::table('tabItem Variant Attribute')->where('parent', $item_code)->orderBy('idx', 'asc')->pluck('attribute_value', 'attribute')->toArray();
+        // // get item alternatives based on parent item code
+        // $q = DB::table('tabItem')->where('variant_of', $item_details->variant_of)->where('name', '!=', $item_details->name)->orderBy('modified', 'desc')->get();
+        // $alternative_item_codes = collect($q)->map(function($q){
+        //     return $q->name;
+        // });
         
-        // get actual stock qty of all item alternatives
-        $actual_stocks_query = DB::table('tabBin')->whereIn('item_code', $alternative_item_codes)->selectRaw('item_code, SUM(actual_qty) as actual_qty')->groupBy('item_code')->get();
-        $actual_stocks = collect($actual_stocks_query)->groupBy('item_code');
+        // // get actual stock qty of all item alternatives
+        // $actual_stocks_query = DB::table('tabBin')->whereIn('item_code', $alternative_item_codes)->selectRaw('item_code, SUM(actual_qty) as actual_qty')->groupBy('item_code')->get();
+        // $actual_stocks = collect($actual_stocks_query)->groupBy('item_code');
         
-        // get total reserved and consumed qty of all item alternatives
-        $stock_reserves_query = StockReservation::whereIn('item_code', $alternative_item_codes)->whereIn('status', ['Active', 'Partially Issued'])->selectRaw('SUM(reserve_qty) as reserved_qty, SUM(consumed_qty) as consumed_qty, item_code')->groupBy('item_code')->get();
-        $alternative_reserves = collect($stock_reserves_query)->groupBy('item_code');
+        // // get total reserved and consumed qty of all item alternatives
+        // $stock_reserves_query = StockReservation::whereIn('item_code', $alternative_item_codes)->whereIn('status', ['Active', 'Partially Issued'])->selectRaw('SUM(reserve_qty) as reserved_qty, SUM(consumed_qty) as consumed_qty, item_code')->groupBy('item_code')->get();
+        // $alternative_reserves = collect($stock_reserves_query)->groupBy('item_code');
         
-        // get draft issued ste of all item alternatives
-        $ste_issued_query = DB::table('tabStock Entry Detail')->where('docstatus', 0)->whereIn('item_code', $alternative_item_codes)->where('status', 'Issued')->selectRaw('SUM(qty) as qty, item_code')->groupBy('item_code')->get();
-        $alternatives_issued_ste = collect($ste_issued_query)->groupBy('item_code');
+        // // get draft issued ste of all item alternatives
+        // $ste_issued_query = DB::table('tabStock Entry Detail')->where('docstatus', 0)->whereIn('item_code', $alternative_item_codes)->where('status', 'Issued')->selectRaw('SUM(qty) as qty, item_code')->groupBy('item_code')->get();
+        // $alternatives_issued_ste = collect($ste_issued_query)->groupBy('item_code');
         
-        // get draft issued packing slip/drs of all item alternatives
-        $at_issued_query = DB::table('tabAthena Transactions as at')
-            ->join('tabPacking Slip as ps', 'ps.name', 'at.reference_parent')
-            ->join('tabPacking Slip Item as psi', 'ps.name', 'psi.parent')
-            ->join('tabDelivery Note as dr', 'ps.delivery_note', 'dr.name')
-            ->whereIn('at.reference_type', ['Packing Slip', 'Picking Slip'])
-            ->where('dr.docstatus', 0)->where('ps.docstatus', '<', 2)
-            ->where('psi.status', 'Issued')
-            ->whereIn('at.item_code', $alternative_item_codes)
-            ->whereRaw('psi.item_code = at.item_code')
-            ->selectRaw('SUM(at.issued_qty) as qty, at.item_code')->groupBy('at.item_code')
-            ->get();
-        $alternatives_issued_at = collect($at_issued_query)->groupBy('item_code');
+        // // get draft issued packing slip/drs of all item alternatives
+        // $at_issued_query = DB::table('tabAthena Transactions as at')
+        //     ->join('tabPacking Slip as ps', 'ps.name', 'at.reference_parent')
+        //     ->join('tabPacking Slip Item as psi', 'ps.name', 'psi.parent')
+        //     ->join('tabDelivery Note as dr', 'ps.delivery_note', 'dr.name')
+        //     ->whereIn('at.reference_type', ['Packing Slip', 'Picking Slip'])
+        //     ->where('dr.docstatus', 0)->where('ps.docstatus', '<', 2)
+        //     ->where('psi.status', 'Issued')
+        //     ->whereIn('at.item_code', $alternative_item_codes)
+        //     ->whereRaw('psi.item_code = at.item_code')
+        //     ->selectRaw('SUM(at.issued_qty) as qty, at.item_code')->groupBy('at.item_code')
+        //     ->get();
+        // $alternatives_issued_at = collect($at_issued_query)->groupBy('item_code');
         
-        foreach($q as $a){
-            $item_alternative_image = DB::table('tabItem Images')->where('parent', $a->item_code)->orderBy('idx', 'asc')->first();
+        // foreach($q as $a){
+        //     $item_alternative_image = DB::table('tabItem Images')->where('parent', $a->item_code)->orderBy('idx', 'asc')->first();
             
-            $total_reserved = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('reserved_qty') : 0;
-            $total_consumed = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('consumed_qty') : 0;
+        //     $total_reserved = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('reserved_qty') : 0;
+        //     $total_consumed = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('consumed_qty') : 0;
         
-            $total_issued_ste = isset($alternatives_issued_ste[$a->item_code]) ? $alternatives_issued_ste[$a->item_code]->sum('qty') : 0;
-            $total_isset_at = isset($alternatives_issued_at[$a->item_code]) ? $alternatives_issued_at[$a->item_code]->sum('qty') : 0;
+        //     $total_issued_ste = isset($alternatives_issued_ste[$a->item_code]) ? $alternatives_issued_ste[$a->item_code]->sum('qty') : 0;
+        //     $total_isset_at = isset($alternatives_issued_at[$a->item_code]) ? $alternatives_issued_at[$a->item_code]->sum('qty') : 0;
             
-            $total_issued = $total_issued_ste + $total_isset_at;
-            $remaining_reserved = $total_reserved - $total_consumed;
+        //     $total_issued = $total_issued_ste + $total_isset_at;
+        //     $remaining_reserved = $total_reserved - $total_consumed;
         
-            $actual_qty = isset($actual_stocks[$a->item_code]) ? $actual_stocks[$a->item_code][0]->actual_qty : 0;
-            $available_qty = $actual_qty - ($total_issued + $remaining_reserved); // get available qty by subtracting the sum of reserved qty and draft issued picking slip/dr's to the actual qty
-            $available_qty = $available_qty > 0 ? $available_qty : 0;
+        //     $actual_qty = isset($actual_stocks[$a->item_code]) ? $actual_stocks[$a->item_code][0]->actual_qty : 0;
+        //     $available_qty = $actual_qty - ($total_issued + $remaining_reserved); // get available qty by subtracting the sum of reserved qty and draft issued picking slip/dr's to the actual qty
+        //     $available_qty = $available_qty > 0 ? $available_qty : 0;
         
-            if(count($item_alternatives) < 7){
-                $item_alternatives[] = [
-                    'item_code' => $a->item_code,
-                    'description' => $a->description,
-                    'item_alternative_image' => ($item_alternative_image) ? $item_alternative_image->image_path : null,
-                    'actual_stocks' => $available_qty
-                ];
-            }
-        }
+        //     if(count($item_alternatives) < 7){
+        //         $item_alternatives[] = [
+        //             'item_code' => $a->item_code,
+        //             'description' => $a->description,
+        //             'item_alternative_image' => ($item_alternative_image) ? $item_alternative_image->image_path : null,
+        //             'actual_stocks' => $available_qty
+        //         ];
+        //     }
+        // }
         
-        if(count($item_alternatives) <= 0) {
-            $q = DB::table('tabItem')->where('item_classification', $item_details->item_classification)->where('name', '!=', $item_details->name)->orderBy('modified', 'desc')->get();
-            foreach($q as $a){
-                $item_alternative_image = DB::table('tabItem Images')->where('parent', $a->item_code)->orderBy('idx', 'asc')->first();
+        // if(count($item_alternatives) <= 0) {
+        //     $q = DB::table('tabItem')->where('item_classification', $item_details->item_classification)->where('name', '!=', $item_details->name)->orderBy('modified', 'desc')->get();
+        //     foreach($q as $a){
+        //         $item_alternative_image = DB::table('tabItem Images')->where('parent', $a->item_code)->orderBy('idx', 'asc')->first();
         
-                $total_reserved = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('reserved_qty') : 0;
-                $total_consumed = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('consumed_qty') : 0;
+        //         $total_reserved = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('reserved_qty') : 0;
+        //         $total_consumed = isset($alternative_reserves[$a->item_code]) ? $alternative_reserves[$a->item_code]->sum('consumed_qty') : 0;
                 
-                $total_issued_ste = isset($alternatives_issued_ste[$a->item_code]) ? $alternatives_issued_ste[$a->item_code]->sum('qty') : 0;
-                $total_isset_at = isset($alternatives_issued_at[$a->item_code]) ? $alternatives_issued_at[$a->item_code]->sum('qty') : 0;
+        //         $total_issued_ste = isset($alternatives_issued_ste[$a->item_code]) ? $alternatives_issued_ste[$a->item_code]->sum('qty') : 0;
+        //         $total_isset_at = isset($alternatives_issued_at[$a->item_code]) ? $alternatives_issued_at[$a->item_code]->sum('qty') : 0;
                 
-                $total_issued = $total_issued_ste + $total_isset_at;
-                $remaining_reserved = $total_reserved - $total_consumed;
+        //         $total_issued = $total_issued_ste + $total_isset_at;
+        //         $remaining_reserved = $total_reserved - $total_consumed;
         
-                $actual_qty = isset($actual_stocks[$a->item_code]) ? $actual_stocks[$a->item_code][0]->actual_qty : 0;
-                $available_qty = $actual_qty - ($total_issued + $remaining_reserved); // get available qty by subtracting the sum of reserved qty and draft issued picking slip/dr's to the actual qty
-                $available_qty = $available_qty > 0 ? $available_qty : 0;
+        //         $actual_qty = isset($actual_stocks[$a->item_code]) ? $actual_stocks[$a->item_code][0]->actual_qty : 0;
+        //         $available_qty = $actual_qty - ($total_issued + $remaining_reserved); // get available qty by subtracting the sum of reserved qty and draft issued picking slip/dr's to the actual qty
+        //         $available_qty = $available_qty > 0 ? $available_qty : 0;
         
-                if(count($item_alternatives) < 7){
-                    $item_alternatives[] = [
-                        'item_code' => $a->item_code,
-                        'description' => $a->description,
-                        'item_alternative_image' => ($item_alternative_image) ? $item_alternative_image->image_path : null,
-                        'actual_stocks' => $available_qty
-                    ];
-                }
-            }
-        }
+        //         if(count($item_alternatives) < 7){
+        //             $item_alternatives[] = [
+        //                 'item_code' => $a->item_code,
+        //                 'description' => $a->description,
+        //                 'item_alternative_image' => ($item_alternative_image) ? $item_alternative_image->image_path : null,
+        //                 'actual_stocks' => $available_qty
+        //             ];
+        //         }
+        //     }
+        // }
 
-        $item_alternatives = collect($item_alternatives)->sortByDesc('actual_stocks')->toArray();
+        // $item_alternatives = collect($item_alternatives)->sortByDesc('actual_stocks')->toArray();
 
-        // variants
-        $co_variants = DB::table('tabItem')->where('variant_of', $item_details->variant_of)->where('name', '!=', $item_details->name)->where('disabled', 0)->select('name', 'item_name', 'custom_item_cost')->paginate(10);
-        $variant_item_codes = array_column($co_variants->items(), 'name');
+        // // variants
+        // $co_variants = DB::table('tabItem')->where('variant_of', $item_details->variant_of)->where('name', '!=', $item_details->name)->where('disabled', 0)->select('name', 'item_name', 'custom_item_cost')->paginate(10);
+        // $variant_item_codes = array_column($co_variants->items(), 'name');
 
-        $variants_price_arr = [];
-        $variants_cost_arr = [];
-        $variants_min_price_arr = [];
-        $actual_variant_stocks = [];
-        $manual_price_input = [];
-        if (in_array($user_department, $allowed_department) || in_array(Auth::user()->user_group, ['Manager', 'Director'])) {
-            // get item cost for items with 0 last purchase rate
-            $item_custom_cost = [];
-            foreach ($co_variants->items() as $row) {
-                $item_custom_cost[$row->name] = $row->custom_item_cost;
-            }
+        // $variants_price_arr = [];
+        // $variants_cost_arr = [];
+        // $variants_min_price_arr = [];
+        // $actual_variant_stocks = [];
+        // $manual_price_input = [];
+        // if (in_array($user_department, $allowed_department) || in_array(Auth::user()->user_group, ['Manager', 'Director'])) {
+        //     // get item cost for items with 0 last purchase rate
+        //     $item_custom_cost = [];
+        //     foreach ($co_variants->items() as $row) {
+        //         $item_custom_cost[$row->name] = $row->custom_item_cost;
+        //     }
 
-            $variants_last_purchase_order = DB::table('tabPurchase Order as po')->join('tabPurchase Order Item as poi', 'po.name', 'poi.parent')
-                ->where('po.docstatus', 1)->whereIn('poi.item_code', $variant_item_codes)->select('poi.base_rate', 'poi.item_code', 'po.supplier_group')->orderBy('po.creation', 'desc')->get();
+        //     $variants_last_purchase_order = DB::table('tabPurchase Order as po')->join('tabPurchase Order Item as poi', 'po.name', 'poi.parent')
+        //         ->where('po.docstatus', 1)->whereIn('poi.item_code', $variant_item_codes)->select('poi.base_rate', 'poi.item_code', 'po.supplier_group')->orderBy('po.creation', 'desc')->get();
 
-            $variants_last_landed_cost_voucher = DB::table('tabLanded Cost Voucher as a')->join('tabLanded Cost Item as b', 'a.name', 'b.parent')
-                ->where('a.docstatus', 1)->whereIn('b.item_code', $variant_item_codes)->select('a.creation', 'b.item_code', 'b.rate', 'b.valuation_rate', DB::raw('ifnull(a.posting_date, a.creation) as transaction_date'), 'a.posting_date')->orderBy('transaction_date', 'desc')->get();
+        //     $variants_last_landed_cost_voucher = DB::table('tabLanded Cost Voucher as a')->join('tabLanded Cost Item as b', 'a.name', 'b.parent')
+        //         ->where('a.docstatus', 1)->whereIn('b.item_code', $variant_item_codes)->select('a.creation', 'b.item_code', 'b.rate', 'b.valuation_rate', DB::raw('ifnull(a.posting_date, a.creation) as transaction_date'), 'a.posting_date')->orderBy('transaction_date', 'desc')->get();
             
-            $variants_last_purchase_order_rates = collect($variants_last_purchase_order)->groupBy('item_code')->toArray();
-            $variants_last_landed_cost_voucher_rates = collect($variants_last_landed_cost_voucher)->groupBy('item_code')->toArray();
+        //     $variants_last_purchase_order_rates = collect($variants_last_purchase_order)->groupBy('item_code')->toArray();
+        //     $variants_last_landed_cost_voucher_rates = collect($variants_last_landed_cost_voucher)->groupBy('item_code')->toArray();
 
-            $variants_website_prices = DB::table('tabItem Price')->where('price_list', 'Website Price List')->where('selling', 1)
-                ->whereIn('item_code', $variant_item_codes)->orderBy('modified', 'desc')->pluck('price_list_rate', 'item_code')->toArray();
+        //     $variants_website_prices = DB::table('tabItem Price')->where('price_list', 'Website Price List')->where('selling', 1)
+        //         ->whereIn('item_code', $variant_item_codes)->orderBy('modified', 'desc')->pluck('price_list_rate', 'item_code')->toArray();
 
-            foreach($variant_item_codes as $variant){
-                $variants_default_price = 0;
-                $variant_rate = 0;
-                if(array_key_exists($variant, $variants_last_purchase_order_rates)){
-                    if($variants_last_purchase_order_rates[$variant][0]->supplier_group == 'Imported'){
-                        $variant_rate = isset($variants_last_landed_cost_voucher[$variant]) ? $variants_last_landed_cost_voucher[$variant][0]->valuation_rate : 0;
-                    }else{
-                        $variant_rate = $variants_last_purchase_order_rates[$variant][0]->base_rate;
-                    }
-                }
+        //     foreach($variant_item_codes as $variant){
+        //         $variants_default_price = 0;
+        //         $variant_rate = 0;
+        //         if(array_key_exists($variant, $variants_last_purchase_order_rates)){
+        //             if($variants_last_purchase_order_rates[$variant][0]->supplier_group == 'Imported'){
+        //                 $variant_rate = isset($variants_last_landed_cost_voucher[$variant]) ? $variants_last_landed_cost_voucher[$variant][0]->valuation_rate : 0;
+        //             }else{
+        //                 $variant_rate = $variants_last_purchase_order_rates[$variant][0]->base_rate;
+        //             }
+        //         }
 
-                $is_manual_rate = 0;
-                // custom item cost 
-                if ($variant_rate <= 0) {
-                    if (array_key_exists($variant, $item_custom_cost)) {
-                        $variant_rate = $item_custom_cost[$variant];
-                        $is_manual_rate = 1;
-                    } else {
-                        $variant_rate = 0;
-                    }
-                }
+        //         $is_manual_rate = 0;
+        //         // custom item cost 
+        //         if ($variant_rate <= 0) {
+        //             if (array_key_exists($variant, $item_custom_cost)) {
+        //                 $variant_rate = $item_custom_cost[$variant];
+        //                 $is_manual_rate = 1;
+        //             } else {
+        //                 $variant_rate = 0;
+        //             }
+        //         }
 
-                if($is_tax_included_in_rate) {
-                    $variants_default_price = ($variant_rate * $standard_price_computation) * 1.12;
-                }
+        //         if($is_tax_included_in_rate) {
+        //             $variants_default_price = ($variant_rate * $standard_price_computation) * 1.12;
+        //         }
 
-                $variants_default_price = array_key_exists($variant, $variants_website_prices) ? $variants_website_prices[$variant] : $variants_default_price;
-                $variants_price_arr[$variant] = $variants_default_price;
-                $variants_cost_arr[$variant] = $variant_rate;
-                $variants_min_price_arr[$variant] = $variant_rate * $minimum_price_computation;
-                $manual_price_input[$variant] = $is_manual_rate;
-            }
-        }
+        //         $variants_default_price = array_key_exists($variant, $variants_website_prices) ? $variants_website_prices[$variant] : $variants_default_price;
+        //         $variants_price_arr[$variant] = $variants_default_price;
+        //         $variants_cost_arr[$variant] = $variant_rate;
+        //         $variants_min_price_arr[$variant] = $variant_rate * $minimum_price_computation;
+        //         $manual_price_input[$variant] = $is_manual_rate;
+        //     }
+        // }
 
-        $actual_variant_stocks = DB::table('tabBin')->whereIn('item_code', $variant_item_codes)->selectRaw('SUM(actual_qty) as actual_qty, item_code')->groupBy('item_code')->pluck('actual_qty', 'item_code')->toArray();
+        // $actual_variant_stocks = DB::table('tabBin')->whereIn('item_code', $variant_item_codes)->selectRaw('SUM(actual_qty) as actual_qty, item_code')->groupBy('item_code')->pluck('actual_qty', 'item_code')->toArray();
 
-        array_push($variant_item_codes, $item_details->name);
+        // array_push($variant_item_codes, $item_details->name);
 
-        $attributes_query = DB::table('tabItem Variant Attribute')->whereIn('parent', $variant_item_codes)->select('parent', 'attribute', 'attribute_value')->orderBy('idx', 'asc')->get();
+        // $attributes_query = DB::table('tabItem Variant Attribute')->whereIn('parent', $variant_item_codes)->select('parent', 'attribute', 'attribute_value')->orderBy('idx', 'asc')->get();
 
-        $attribute_names = collect($attributes_query)->map(function ($q){
-            return $q->attribute;
-        })->unique();
+        // $attribute_names = collect($attributes_query)->map(function ($q){
+        //     return $q->attribute;
+        // })->unique();
 
-        $attributes = [];
-        foreach ($attributes_query as $row) {
-            $attributes[$row->parent][$row->attribute] = $row->attribute_value;
-        }
+        // $attributes = [];
+        // foreach ($attributes_query as $row) {
+        //     $attributes[$row->parent][$row->attribute] = $row->attribute_value;
+        // }
 
-        return view('item_profile', compact('is_tax_included_in_rate', 'item_details', 'item_attributes', 'site_warehouses', 'item_images', 'item_alternatives', 'consignment_warehouses', 'user_group', 'minimum_selling_price', 'default_price', 'attribute_names', 'co_variants', 'attributes', 'variants_price_arr', 'item_rate', 'last_purchase_date', 'allowed_department', 'user_department', 'avgPurchaseRate', 'last_purchase_rate', 'variants_cost_arr', 'variants_min_price_arr', 'actual_variant_stocks', 'item_stock_available', 'manual_rate', 'manual_price_input'));
+        // return view('item_profile', compact('is_tax_included_in_rate', 'item_details', 'item_attributes', 'site_warehouses', 'item_images', 'item_alternatives', 'consignment_warehouses', 'user_group', 'minimum_selling_price', 'default_price', 'attribute_names', 'co_variants', 'attributes', 'variants_price_arr', 'item_rate', 'last_purchase_date', 'allowed_department', 'user_department', 'avgPurchaseRate', 'last_purchase_rate', 'variants_cost_arr', 'variants_min_price_arr', 'actual_variant_stocks', 'item_stock_available', 'manual_rate', 'manual_price_input'));
     }
 
-    // public function get_athena_transactions(Request $request, $item_code){
-    //     $user_group = Auth::user()->user_group;
-    //     $logs = DB::table('tabAthena Transactions')->where('item_code', $item_code)
-    //         ->when($request->wh_user != '' and $request->wh_user != 'null', function($q) use ($request){
-    //             return $q->where('warehouse_user', $request->wh_user);
-    //         })
-    //         ->when($request->src_wh != '' and $request->src_wh != 'null', function($q) use ($request){
-    //             return $q->where('source_warehouse', $request->src_wh);
-    //         })
-    //         ->when($request->trg_wh != '' and $request->trg_wh != 'null', function($q) use ($request){
-    //             return $q->where('target_warehouse', $request->trg_wh);
-    //         })
-    //         ->when($request->ath_dates != '' and $request->ath_dates != 'null', function($q) use ($request){
-    //             $dates = explode(' to ', $request->ath_dates);
-    //             $from = Carbon::parse($dates[0]);
-    //             $to = Carbon::parse($dates[1])->endOfDay();
-    //             return $q->whereBetween('transaction_date',[$from, $to]);
-    //         })
-    //         ->orderBy('transaction_date', 'desc')->paginate(15);
+    public function get_athena_transactions(Request $request, $item_code){
+        $user_group = Auth::user()->user_group;
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        $list = [];
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-    //     $ste_names = array_column($logs->items(), 'reference_parent');
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_athena_transaction_history/' . $item_code, [
+                    'query' => [
+                        'trg_wh' => $request->trg_wh,
+                        'user_group' => $user_group,
+                        'src_wh' => $request->src_wh,
+                        'wh_user' => Auth::user()->wh_user,
+                        'page' => $request->page,
+                        'ath_dates' => $request->ath_dates
+                    ],
+                    'headers' => $headers,
+                ]);
 
-    //     $ste_remarks = DB::table('tabStock Entry')->whereIn('name', $ste_names)
-    //         ->select('purpose', 'transfer_as', 'receive_as', 'issue_as', 'name')->get();
+                if ($res->getStatusCode() == 200) {
+                    $res = (array) json_decode((string) $res->getBody());
+                    
+                    $result = $res['data'];
+
+                    $list = $result->list;
+                    $logs = $result->logs;
+
+                    $numOfPages = $logs->last_page;
+                    $current_page = $logs->current_page;
+                    $has_next_page = $logs->next_page_url;
+                    $has_previous_page = $logs->prev_page_url;
+                    $next_page = $current_page + 1;
+                    $total_records = $logs->total;
+                   
+                    return view('tbl_athena_transactions', compact('list', 'item_code', 'user_group', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
+                }
+            } catch (ConnectException $e) {
+                $list = [];
+                $api_connected = false;
+            }
+        }
+
+        // $user_group = Auth::user()->user_group;
+        // $logs = DB::table('tabAthena Transactions')->where('item_code', $item_code)
+        //     ->when($request->wh_user != '' and $request->wh_user != 'null', function($q) use ($request){
+        //         return $q->where('warehouse_user', $request->wh_user);
+        //     })
+        //     ->when($request->src_wh != '' and $request->src_wh != 'null', function($q) use ($request){
+        //         return $q->where('source_warehouse', $request->src_wh);
+        //     })
+        //     ->when($request->trg_wh != '' and $request->trg_wh != 'null', function($q) use ($request){
+        //         return $q->where('target_warehouse', $request->trg_wh);
+        //     })
+        //     ->when($request->ath_dates != '' and $request->ath_dates != 'null', function($q) use ($request){
+        //         $dates = explode(' to ', $request->ath_dates);
+        //         $from = Carbon::parse($dates[0]);
+        //         $to = Carbon::parse($dates[1])->endOfDay();
+        //         return $q->whereBetween('transaction_date',[$from, $to]);
+        //     })
+        //     ->orderBy('transaction_date', 'desc')->paginate(15);
+
+        // $ste_names = array_column($logs->items(), 'reference_parent');
+
+        // $ste_remarks = DB::table('tabStock Entry')->whereIn('name', $ste_names)
+        //     ->select('purpose', 'transfer_as', 'receive_as', 'issue_as', 'name')->get();
         
-    //     $ste_remarks = collect($ste_remarks)->groupBy('name')->toArray();
+        // $ste_remarks = collect($ste_remarks)->groupBy('name')->toArray();
 
-    //     $list = [];
-    //     foreach($logs as $row){
-    //         $ps_ref = ['Packing Slip', 'Picking Slip'];
-    //         $reference_type = (in_array($row->reference_type, $ps_ref)) ? 'Packing Slip' : $row->reference_type;
+        // $list = [];
+        // foreach($logs as $row){
+        //     $ps_ref = ['Packing Slip', 'Picking Slip'];
+        //     $reference_type = (in_array($row->reference_type, $ps_ref)) ? 'Packing Slip' : $row->reference_type;
 
-    //         $existing_reference_no = DB::table('tab'.$reference_type)->where('name', $row->reference_parent)->first();
-    //         if(!$existing_reference_no){
-    //             $status = 'DELETED';
-    //         }else{
-    //             if ($existing_reference_no->docstatus == 2 or $row->docstatus == 2) {
-    //                 $status = 'CANCELLED';
-    //             } elseif ($existing_reference_no->docstatus == 0) {
-    //                 $status = 'DRAFT';
-    //             } else {
-    //                 $status = 'SUBMITTED';
-    //             }
-    //         }
+        //     $existing_reference_no = DB::table('tab'.$reference_type)->where('name', $row->reference_parent)->first();
+        //     if(!$existing_reference_no){
+        //         $status = 'DELETED';
+        //     }else{
+        //         if ($existing_reference_no->docstatus == 2 or $row->docstatus == 2) {
+        //             $status = 'CANCELLED';
+        //         } elseif ($existing_reference_no->docstatus == 0) {
+        //             $status = 'DRAFT';
+        //         } else {
+        //             $status = 'SUBMITTED';
+        //         }
+        //     }
 
-    //         $remarks = [];
-    //         $remarks = (array_key_exists($row->reference_parent, $ste_remarks)) ? $ste_remarks[$row->reference_parent] : [];
-    //         if (count($remarks) > 0) {
-    //             if($remarks[0]->purpose == 'Material Issue') {
-    //                 $remarks = $remarks[0]->issue_as;
-    //             } elseif ($remarks[0]->purpose == 'Material Transfer') {
-    //                 $remarks = $remarks[0]->transfer_as;
-    //             } elseif ($remarks[0]->purpose == 'Material Receipt') {
-    //                 $remarks = $remarks[0]->receive_as;
-    //             } elseif ($remarks[0]->purpose == 'Material Transfer for Manufacture') {
-    //                 $remarks = 'Materials Withdrawal';
-    //             } else {
-    //                 $remarks = '-';
-    //             }
-    //         } else {
-    //             $remarks = null;
-    //         }
+        //     $remarks = [];
+        //     $remarks = (array_key_exists($row->reference_parent, $ste_remarks)) ? $ste_remarks[$row->reference_parent] : [];
+        //     if (count($remarks) > 0) {
+        //         if($remarks[0]->purpose == 'Material Issue') {
+        //             $remarks = $remarks[0]->issue_as;
+        //         } elseif ($remarks[0]->purpose == 'Material Transfer') {
+        //             $remarks = $remarks[0]->transfer_as;
+        //         } elseif ($remarks[0]->purpose == 'Material Receipt') {
+        //             $remarks = $remarks[0]->receive_as;
+        //         } elseif ($remarks[0]->purpose == 'Material Transfer for Manufacture') {
+        //             $remarks = 'Materials Withdrawal';
+        //         } else {
+        //             $remarks = '-';
+        //         }
+        //     } else {
+        //         $remarks = null;
+        //     }
             
-    //         $list[] = [
-    //             'reference_name' => $row->reference_name,
-    //             'item_code' => $row->item_code,
-    //             'reference_parent' => $row->reference_parent,
-    //             'item_code' => $row->item_code,
-    //             'source_warehouse' => $row->source_warehouse,
-    //             'target_warehouse' => $row->target_warehouse,
-    //             'reference_type' => $row->purpose,
-    //             'issued_qty' => $row->issued_qty * 1,
-    //             'reference_no' => $row->reference_no,
-    //             'transaction_date' => $row->transaction_date,
-    //             'warehouse_user' => $row->warehouse_user,
-    //             'status' => $status,
-    //             'remarks' => $remarks
-    //         ];
-    //     }
+        //     $list[] = [
+        //         'reference_name' => $row->reference_name,
+        //         'item_code' => $row->item_code,
+        //         'reference_parent' => $row->reference_parent,
+        //         'item_code' => $row->item_code,
+        //         'source_warehouse' => $row->source_warehouse,
+        //         'target_warehouse' => $row->target_warehouse,
+        //         'reference_type' => $row->purpose,
+        //         'issued_qty' => $row->issued_qty * 1,
+        //         'reference_no' => $row->reference_no,
+        //         'transaction_date' => $row->transaction_date,
+        //         'warehouse_user' => $row->warehouse_user,
+        //         'status' => $status,
+        //         'remarks' => $remarks
+        //     ];
+        // }
 
-    //     return view('tbl_athena_transactions', compact('list', 'logs', 'item_code', 'user_group'));
-    // }
+        // return view('tbl_athena_transactions', compact('list', 'logs', 'item_code', 'user_group'));
+    }
 
     // public function cancel_athena_transaction(Request $request){
     //     DB::beginTransaction();
@@ -3276,105 +3395,151 @@ class MainController extends Controller
     //     }
     // }
 
-    // public function get_stock_ledger(Request $request, $item_code){
-    //     $logs = DB::table('tabStock Ledger Entry as sle')->where('sle.item_code', $item_code)
-    //         ->select(DB::raw('(SELECT GROUP_CONCAT(name) FROM `tabPacking Slip` where delivery_note = sle.voucher_no) as dr_voucher_no'))
-    //         ->addSelect(DB::raw('
-    //             (CASE
-    //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT date_modified FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) in ("Manufacture") THEN (SELECT modified FROM `tabStock Entry` where name = sle.voucher_no)
-    //                 WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.date_modified FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
-    //             ELSE
-    //                 sle.posting_date
-    //             END) as ste_date_modified'
-    //         ))
-    //         ->addSelect(DB::raw('
-    //             (CASE
-    //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT session_user FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                 WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.session_user FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
-    //             END) as ste_session_user'
-    //         ))
-    //         ->addSelect(DB::raw('(SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) as ste_purpose'))
-    //         ->addSelect(DB::raw('(SELECT GROUP_CONCAT(sales_order_no) FROM `tabStock Entry` where name = sle.voucher_no) as ste_sales_order'))
-    //         ->addSelect(DB::raw('(SELECT GROUP_CONCAT(DISTINCT purchase_order) FROM `tabPurchase Receipt Item` where parent = sle.voucher_no and item_code = sle.item_code) as pr_voucher_no'))
-    //         ->addSelect('sle.voucher_type', 'sle.voucher_no', 'sle.warehouse', 'sle.actual_qty', 'sle.qty_after_transaction', 'sle.posting_date')
-    //         ->when($request->wh_user != '' and $request->wh_user != 'null', function($q) use ($request){
-	// 			return $q->where(DB::raw('
-    //                 (CASE
-    //                     WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT session_user FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                     WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.session_user FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                 END)'
-    //             ), $request->wh_user);
-    //         })
-    //         ->when($request->erp_wh != '' and $request->erp_wh != 'null', function($q) use ($request){
-	// 			return $q->where('sle.warehouse', $request->erp_wh);
-    //         })
-    //         ->when($request->erp_d != '' and $request->erp_d != 'null', function($q) use ($request){
-    //             $dates = explode(' to ', $request->erp_d);
+    public function get_stock_ledger(Request $request, $item_code){
+        $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
+        $list = [];
+        $user_group = Auth::user()->user_group;
+        if ($athenaerp_api) {
+            try {
+                $headers = [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '. $athenaerp_api->api_key,
+                    'Accept-Language' => 'en',
+                    'Accept' => 'application/json',
+                ];
 
-	// 			return $q->whereBetween(DB::raw('
-    //                 (CASE
-    //                     WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT date_modified FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                     WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) in ("Manufacture") THEN (SELECT modified FROM `tabStock Entry` where name = sle.voucher_no)
-    //                     WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.date_modified FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
-    //                 ELSE
-    //                     sle.posting_date
-    //                 END)'
-    //             ), [$dates[0], $dates[1]]);
-    //         })
-    //         ->orderBy('sle.posting_date', 'desc')->orderBy('sle.posting_time', 'desc')
-    //         ->orderBy('sle.name', 'desc')->paginate(20);
+                $client = new \GuzzleHttp\Client();
+                $res = $client->request('GET', $athenaerp_api->base_url.'/api/get_stock_ledger/' . $item_code, [
+                    'query' => [
+                        'wh_user' => Auth::user()->wh_user,
+                        'erp_wh' => $request->erp_wh,
+                        'erp_d' => $request->erp_d,
+                        'page' => $request->page,
+                    ],
+                    'headers' => $headers,
+                ]);
+
+                if ($res->getStatusCode() == 200) {
+                    $res = (array) json_decode((string) $res->getBody());
+                    
+                    $result = $res['data'];
+
+                    $list = $result->list;
+                    $logs = $result->logs;
+
+                    $numOfPages = $logs->last_page;
+                    $current_page = $logs->current_page;
+                    $has_next_page = $logs->next_page_url;
+                    $has_previous_page = $logs->prev_page_url;
+                    $next_page = $current_page + 1;
+                    $total_records = $logs->total;
+                   
+                    return view('tbl_stock_ledger', compact('list', 'item_code', 'user_group', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
+                }
+            } catch (ConnectException $e) {
+                $list = [];
+                $api_connected = false;
+            }
+        }
+
+        // $logs = DB::table('tabStock Ledger Entry as sle')->where('sle.item_code', $item_code)
+        //     ->select(DB::raw('(SELECT GROUP_CONCAT(name) FROM `tabPacking Slip` where delivery_note = sle.voucher_no) as dr_voucher_no'))
+        //     ->addSelect(DB::raw('
+        //         (CASE
+        //             WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT date_modified FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
+        //             WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) in ("Manufacture") THEN (SELECT modified FROM `tabStock Entry` where name = sle.voucher_no)
+        //             WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.date_modified FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
+        //         ELSE
+        //             sle.posting_date
+        //         END) as ste_date_modified'
+        //     ))
+        //     ->addSelect(DB::raw('
+        //         (CASE
+        //             WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT session_user FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
+        //             WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.session_user FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
+        //         END) as ste_session_user'
+        //     ))
+        //     ->addSelect(DB::raw('(SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) as ste_purpose'))
+        //     ->addSelect(DB::raw('(SELECT GROUP_CONCAT(sales_order_no) FROM `tabStock Entry` where name = sle.voucher_no) as ste_sales_order'))
+        //     ->addSelect(DB::raw('(SELECT GROUP_CONCAT(DISTINCT purchase_order) FROM `tabPurchase Receipt Item` where parent = sle.voucher_no and item_code = sle.item_code) as pr_voucher_no'))
+        //     ->addSelect('sle.voucher_type', 'sle.voucher_no', 'sle.warehouse', 'sle.actual_qty', 'sle.qty_after_transaction', 'sle.posting_date')
+        //     ->when($request->wh_user != '' and $request->wh_user != 'null', function($q) use ($request){
+		// 		return $q->where(DB::raw('
+        //             (CASE
+        //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT session_user FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
+        //                 WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.session_user FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
+        //             END)'
+        //         ), $request->wh_user);
+        //     })
+        //     ->when($request->erp_wh != '' and $request->erp_wh != 'null', function($q) use ($request){
+		// 		return $q->where('sle.warehouse', $request->erp_wh);
+        //     })
+        //     ->when($request->erp_d != '' and $request->erp_d != 'null', function($q) use ($request){
+        //         $dates = explode(' to ', $request->erp_d);
+
+		// 		return $q->whereBetween(DB::raw('
+        //             (CASE
+        //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) IN ("Material Transfer for Manufacture", "Material Transfer", "Material Issue") THEN (SELECT date_modified FROM `tabStock Entry Detail` where parent = sle.voucher_no and item_code = sle.item_code limit 1)
+        //                 WHEN (SELECT GROUP_CONCAT(purpose) FROM `tabStock Entry` where name = sle.voucher_no) in ("Manufacture") THEN (SELECT modified FROM `tabStock Entry` where name = sle.voucher_no)
+        //                 WHEN sle.voucher_type in ("Picking Slip", "Packing Slip", "Delivery Note") THEN (SELECT psi.date_modified FROM `tabPacking Slip` as ps join `tabPacking Slip Item` as psi on ps.name = psi.parent where ps.delivery_note = sle.voucher_no and item_code = sle.item_code limit 1)
+        //             ELSE
+        //                 sle.posting_date
+        //             END)'
+        //         ), [$dates[0], $dates[1]]);
+        //     })
+        //     ->orderBy('sle.posting_date', 'desc')->orderBy('sle.posting_time', 'desc')
+        //     ->orderBy('sle.name', 'desc')->paginate(20);
             
-    //     $list = [];
-    //     foreach($logs as $row){
-    //         if($row->voucher_type == 'Delivery Note'){
-    //             $voucher_no = $row->dr_voucher_no;
-    //             $transaction = 'Picking Slip';
-    //         }elseif($row->voucher_type == 'Purchase Receipt'){
-    //             $transaction = $row->voucher_type;
-    //         }elseif($row->voucher_type == 'Stock Reconciliation'){
-    //             $transaction = $row->voucher_type;
-    //             $voucher_no = $row->voucher_no;
-    //         }else{
-    //             $transaction = $row->ste_purpose;
-    //             $voucher_no = $row->voucher_no;
-    //         }
+        // $list = [];
+        // foreach($logs as $row){
+        //     if($row->voucher_type == 'Delivery Note'){
+        //         $voucher_no = $row->dr_voucher_no;
+        //         $transaction = 'Picking Slip';
+        //     }elseif($row->voucher_type == 'Purchase Receipt'){
+        //         $transaction = $row->voucher_type;
+        //     }elseif($row->voucher_type == 'Stock Reconciliation'){
+        //         $transaction = $row->voucher_type;
+        //         $voucher_no = $row->voucher_no;
+        //     }else{
+        //         $transaction = $row->ste_purpose;
+        //         $voucher_no = $row->voucher_no;
+        //     }
 
-    //         if($row->voucher_type == 'Delivery Note'){
-    //             $ref_no = $voucher_no;
-    //         }elseif($row->voucher_type == 'Purchase Receipt'){
-    //             $voucher_no = $row->pr_voucher_no;
-    //             $ref_no = $voucher_no;
-    //         }elseif($row->voucher_type == 'Stock Entry'){
-    //             $ref_no = $row->ste_sales_order;
-    //         }elseif($row->voucher_type == 'Stock Reconciliation'){
-    //             $ref_no = $voucher_no;
-    //         }else{
-    //             $ref_no = null;
-    //         }
+        //     if($row->voucher_type == 'Delivery Note'){
+        //         $ref_no = $voucher_no;
+        //     }elseif($row->voucher_type == 'Purchase Receipt'){
+        //         $voucher_no = $row->pr_voucher_no;
+        //         $ref_no = $voucher_no;
+        //     }elseif($row->voucher_type == 'Stock Entry'){
+        //         $ref_no = $row->ste_sales_order;
+        //     }elseif($row->voucher_type == 'Stock Reconciliation'){
+        //         $ref_no = $voucher_no;
+        //     }else{
+        //         $ref_no = null;
+        //     }
 
-    //         $date_modified = $row->ste_date_modified;
-    //         $session_user = $row->ste_session_user;
+        //     $date_modified = $row->ste_date_modified;
+        //     $session_user = $row->ste_session_user;
 
-    //         if($date_modified and $date_modified != '--'){
-    //             $date_modified = Carbon::parse($date_modified);
-    //         }
+        //     if($date_modified and $date_modified != '--'){
+        //         $date_modified = Carbon::parse($date_modified);
+        //     }
 
-    //         $list[] = [
-    //             'voucher_no' => $voucher_no,
-    //             'warehouse' => $row->warehouse,
-    //             'transaction' => $transaction,
-    //             'actual_qty' => $row->actual_qty * 1,
-    //             'qty_after_transaction' => $row->qty_after_transaction * 1,
-    //             'ref_no' => $ref_no,
-    //             'date_modified' => $date_modified,
-    //             'session_user' => $session_user,
-    //             'posting_date' => $row->posting_date,
-    //         ];
-    //     }
+        //     $list[] = [
+        //         'voucher_no' => $voucher_no,
+        //         'warehouse' => $row->warehouse,
+        //         'transaction' => $transaction,
+        //         'actual_qty' => $row->actual_qty * 1,
+        //         'qty_after_transaction' => $row->qty_after_transaction * 1,
+        //         'ref_no' => $ref_no,
+        //         'date_modified' => $date_modified,
+        //         'session_user' => $session_user,
+        //         'posting_date' => $row->posting_date,
+        //     ];
+        // }
 
-    //     return view('tbl_stock_ledger', compact('list', 'logs', 'item_code'));
-    // }
+        // return view('tbl_stock_ledger', compact('list', 'logs', 'item_code'));
+    }
 
     // public function print_barcode($item_code){
     //     $item_details = DB::table('tabItem')->where('name', $item_code)->first();
