@@ -30,8 +30,10 @@ Route::group(['middleware' => 'auth'], function(){
     // Route::get('/viewParentItemDetails', 'ItemAttributeController@viewParentItemDetails');
     // Route::post('/deleteItemAttribute/{parentItemCode}', 'ItemAttributeController@deleteItemAttribute');
     // Route::post('/updateParentItem/{item_code}', 'ItemAttributeController@updateParentItem');
-    
-    
+
+    Route::get('/get_total_stock_transfer', 'MainController@getTotalStockTransfer');
+    Route::get('/get_pending_to_receive_items', 'MainController@getPendingToReceiveItems');
+
     Route::get('/', 'MainController@index');
     Route::get('/search_results', 'MainController@search_results');
     // Route::get('/search_results_images', 'MainController@search_results_images');
