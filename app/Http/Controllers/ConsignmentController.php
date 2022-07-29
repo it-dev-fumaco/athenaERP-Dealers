@@ -1539,6 +1539,10 @@ class ConsignmentController extends Controller
 
     // /promodiser/delivery_report/{type}
     public function promodiserDeliveryReport($type, Request $request){
+        return view('consignment.promodiser_delivery_report', compact('type'));
+    }
+
+    public function getDeliveryReportList($type, Request $request){
         $page = $request->page ? $request->page : 1;
 
         $assigned_consignment_store = DB::table('tabAssigned Consignment Warehouse')->where('parent', Auth::user()->frappe_userid)->pluck('warehouse')->toArray();
@@ -1691,7 +1695,7 @@ class ConsignmentController extends Controller
             ];
         }
 
-        return view('consignment.promodiser_delivery_report', compact('ste_arr', 'type', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
+        return view('consignment.tbl_delivery_list', compact('ste_arr', 'type', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
     }
 
     // /promodiser/receive/{id}
