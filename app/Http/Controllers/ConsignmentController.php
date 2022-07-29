@@ -3626,6 +3626,10 @@ class ConsignmentController extends Controller
     }
 
     public function stockTransferList($purpose, Request $request){
+        return view('consignment.stock_transfers_list', compact('purpose'));
+    }
+
+    public function getstockTransferList($purpose, Request $request){
         $page = $request->page ? $request->page : 1;
 
         $api_connected = true;
@@ -3639,6 +3643,9 @@ class ConsignmentController extends Controller
         $beginning_inventory_start_date = $beginning_inventory_start ? Carbon::parse($beginning_inventory_start)->startOfDay()->format('Y-m-d') : Carbon::parse('2022-06-25')->startOfDay()->format('Y-m-d');
 
         $stock_transfers = $stock_transfer_items = [];
+        $numOfPages = $next_page = $total_records = 0;
+        $has_next_page = $has_previous_page = false;
+        $current_page = 1;
         $athenaerp_api = DB::table('api_setup')->where('type', 'athenaerp_api')->first();
         if ($athenaerp_api) {
             try {
@@ -3775,7 +3782,7 @@ class ConsignmentController extends Controller
             ];
         }
 
-        return view('consignment.stock_transfers_list', compact('ste_arr', 'purpose', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
+        return view('consignment.tbl_stock_transfers', compact('ste_arr', 'purpose', 'numOfPages', 'current_page', 'has_next_page', 'has_previous_page', 'next_page', 'total_records'));
     }
 
     public function viewInventoryAuditList(Request $request) {

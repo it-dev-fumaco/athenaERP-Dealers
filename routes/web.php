@@ -33,6 +33,8 @@ Route::group(['middleware' => 'auth'], function(){
 
     Route::get('/get_total_stock_transfer', 'MainController@getTotalStockTransfer');
     Route::get('/get_pending_to_receive_items', 'MainController@getPendingToReceiveItems');
+    Route::get('/get_stock_transfer_list/{purpose}', 'ConsignmentController@getstockTransferList');
+    
 
     Route::get('/', 'MainController@index');
     Route::get('/search_results', 'MainController@search_results');
